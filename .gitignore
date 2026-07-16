@@ -1,0 +1,38 @@
+# Environnements et secrets
+.venv/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+
+# Outils Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Données AtlasPump
+data/
+*.parquet
+*.jsonl
+*.jsonl.zst
+*.zst
+*.duckdb
+*.db
+
+# Modèles et artefacts
+models/
+checkpoints/
+*.keras
+*.h5
+*.onnx
+*.pt
+*.pth
+*.joblib
+
+# Système et IDE
+.DS_Store
+.vscode/
+.idea/
