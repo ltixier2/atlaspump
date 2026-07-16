@@ -3,7 +3,7 @@
 | RFC | Titre | Statut |
 | --- | --- | --- |
 | RFC-001 | [Vision et périmètre](RFC-001-vision-et-perimetre.md) | DRAFT |
-| RFC-002 | Architecture globale | NOT_STARTED |
+| RFC-002 | [Architecture globale](RFC-002-architecture-globale.md) | DRAFT |
 | RFC-003 | Modèle de données canonique | NOT_STARTED |
 | RFC-004 | Collecte live et replay | NOT_STARTED |
 | RFC-005 | Stockage et partitionnement | NOT_STARTED |
