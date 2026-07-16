@@ -1,58 +1,49 @@
 # Vision AtlasPump — DRAFT
 
-> Document de travail. Il ne constitue pas encore une décision d'architecture.
+AtlasPump est une plateforme de recherche sur Pump.fun et PumpSwap. Elle
+construit un patrimoine de données historiques et temps réel pour étudier les
+lifecycles de tokens, les créateurs, les wallets et leurs relations, puis
+évaluer des modèles et des stratégies de manière reproductible.
 
-## Objectifs
+La référence est [RFC-001 — Vision et périmètre](docs/rfc/RFC-001-vision-et-perimetre.md).
+Ce document en est une synthèse lisible ; la RFC reste `DRAFT`.
 
-- Construire une base de données rejouable des événements Pump.fun et PumpSwap.
-- Distinguer faits observés, données dérivées et inférences de modèles.
-- Produire des datasets versionnés pour la recherche, l'évaluation et
-  l'inférence.
-- Comparer des baselines simples avant d'adopter des modèles complexes.
+## Priorité
 
-## Non-objectifs
+Les données sont l'actif principal : raw immuable, transformations rejouables,
+dérivés versionnés et lineage par manifestes. Les faits observés, données
+dérivées et inférences doivent rester distincts.
 
-- Déployer immédiatement un système de trading réel.
-- Considérer une donnée incomplète ou censurée comme un échec observé.
-- Coupler les données, les modèles et les chemins de stockage à une machine.
+## Périmètre
 
-## Principes
+- Collecte et replay, normalisation, quality control et reconstruction de
+  lifecycles.
+- Datasets versionnés pour analyses tabulaires, temporelles et relationnelles.
+- Baselines, modèles ML/DL, backtests réalistes et préparation de l'inférence.
+- Paper trading et exécution réelle uniquement comme étapes futures soumises à
+  RFC et contrôles spécifiques.
 
-- Les données brutes sont immuables.
-- Toute transformation est déterministe, traçable et rejouable.
-- Toute donnée dérivée est versionnée.
-- Les modèles sont interchangeables et évalués contre une baseline.
-- Les décisions structurantes passent par RFC.
+## Principes de décision
 
-## Utilisateurs du système
+- Une baseline simple précède tout modèle complexe.
+- Les données censurées ne sont pas assimilées à des échecs.
+- Une métrique de modèle ne suffit pas : la robustesse temporelle et les
+  frictions de backtest comptent.
+- Les fournisseurs, machines et chemins ne doivent pas créer de verrouillage.
+- Les données volumineuses restent hors Git ; `ATLAS_DATA_DIR` configure les
+  emplacements physiques.
+- Aucune brique structurante n'est implémentée avant l'acceptation de sa RFC.
 
-- Chercheurs et développeurs de modèles.
-- Opérateurs de collecte et de préparation des données.
-- Opérateurs de backtesting, paper trading et, à terme, trading.
+## Mesure du succès
 
-## Questions de recherche
+Le projet doit démontrer la couverture et la qualité de ses données, la
+reproductibilité de ses datasets, une valeur robuste face aux baselines, et des
+résultats simulés après frais, latence, liquidité et slippage. Il ne promet
+aucun rendement financier.
 
-- Quels signaux précoces décrivent les trajectoires des tokens ?
-- Comment représenter la temporalité, les relations et la censure sans fuite
-  d'information ?
-- Quels modèles améliorent réellement des baselines tabulaires simples ?
+## Décisions ouvertes
 
-## Critères de réussite
-
-- Un dataset peut être recréé à partir de son manifeste et de ses sources.
-- Les mesures hors échantillon respectent la disponibilité temporelle réelle.
-- Les résultats de backtest sont auditables et reproductibles.
-
-## Risques
-
-- Données API incomplètes, tardives ou sémantiquement ambiguës.
-- Fuite temporelle et biais de sélection dans les labels et datasets.
-- Coût de stockage, transfert et entraînement entre machines hétérogènes.
-- Risque opérationnel si recherche et exécution sont insuffisamment séparées.
-
-## Décisions encore ouvertes
-
-- Contrat canonique des événements et politique d'évolution de schéma.
-- Format des manifests et stratégie de versionnement des datasets.
-- Partitionnement, rétention et orchestration sur Cerebro.
-- Définition des labels, de la censure et des règles de backtest.
+La rétention raw, la profondeur historique, les labels de succès, la politique
+de censure, la dépendance à PumpApi, le passage au live, l'introduction du
+graphe et les seuils avant paper trading restent à trancher dans les RFC
+suivantes.
