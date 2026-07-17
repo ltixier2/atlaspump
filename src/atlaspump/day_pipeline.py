@@ -31,7 +31,7 @@ from atlaspump.contracts import (
     source_event_id,
 )
 from atlaspump.decompressor import iter_jsonl_zst
-from atlaspump.downloader import sha256_file
+from atlaspump.downloader import DownloadError, build_archive_url, download_archive, sha256_file
 from atlaspump.event_classifier import classify_event
 from atlaspump.manifests import read_manifest, write_manifest_atomic
 
@@ -114,7 +114,17 @@ def _published(path: Path) -> bool:
     return bool(manifest and manifest.get("publication_status") == "LOCAL_COMPLETE")
 
 
-def collect_day(root: Path, input_root: Path, day: date, hours: Iterable[int], resume: bool = False) -> Path:
+def collect_day(
+    root: Path,
+    input_root: Path,
+    day: date,
+    hours: Iterable[int],
+    resume: bool = False,
+    download_missing: bool = False,
+    archive_url_template: str | None = None,
+    timeout_seconds: int = 60,
+    max_retries: int = 3,
+) -> Path:
     """Copy local fixture/replay archives into immutable raw storage and publish a manifest."""
     hours = list(hours)
     manifest_path = _manifest_path(root, COLLECTION, day)
@@ -132,6 +142,21 @@ def collect_day(root: Path, input_root: Path, day: date, hours: Iterable[int], r
     for hour in hours:
         partition = f"{hour:02d}"
         source = _archive(input_root, day, hour)
+        retries = 0
+        source_url = None
+        if not source.is_file() and download_missing:
+            if archive_url_template is None:
+                raise ValueError("archive_url_template is required when downloading")
+            source_url = build_archive_url(archive_url_template, day, hour)
+            for attempt in range(1, max_retries + 1):
+                try:
+                    download_archive(source_url, source, timeout_seconds)
+                    break
+                except DownloadError:
+                    retries = attempt
+                    if attempt == max_retries:
+                        break
+                    time.sleep(min(2**attempt, 8))
         if not source.is_file() or source.stat().st_size == 0:
             missing.append(partition)
             continue
@@ -152,7 +177,7 @@ def collect_day(root: Path, input_root: Path, day: date, hours: Iterable[int], r
             seen.add(source_id)
             received += 1
         counts.update(received=received, invalid=invalid, duplicates=duplicates, bytes=target.stat().st_size)
-        item = {"partition": partition, "path": _relative(root, target), "sha256": sha256_file(target), "bytes": target.stat().st_size, "received": received, "invalid": invalid, "duplicates": duplicates}
+        item = {"partition": partition, "path": _relative(root, target), "sha256": sha256_file(target), "bytes": target.stat().st_size, "received": received, "invalid": invalid, "duplicates": duplicates, "source_url": source_url, "retries": retries}
         partitions.append(item)
         write_manifest_atomic(checkpoint, {"capture_run_id": run_id, "last_checkpoint": partition, "partitions": partitions})
     coverage = "COMPLETE" if not missing and len(partitions) == len(hours) else ("PARTIAL" if partitions else "MISSING")

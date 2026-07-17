@@ -189,6 +189,7 @@ def main() -> None:
     collect.add_argument("--output-root", required=True, type=Path)
     collect.add_argument("--hours", default="0-23")
     collect.add_argument("--resume", action="store_true")
+    collect.add_argument("--download-missing", action="store_true")
     collect.add_argument("--validate-only", action="store_true")
     collect.add_argument("--force", action="store_true", help="Reserved; published output is never overwritten")
     normalize = sub.add_parser("normalize-day", help="Normalize one published raw collection")
@@ -204,6 +205,7 @@ def main() -> None:
     day.add_argument("--output-root", required=True, type=Path)
     day.add_argument("--hours", default="0-23")
     day.add_argument("--resume", action="store_true")
+    day.add_argument("--download-missing", action="store_true")
     day.add_argument("--validate-only", action="store_true")
     day.add_argument("--force", action="store_true", help="Reserved; published output is never overwritten")
     args = parser.parse_args()
@@ -217,7 +219,16 @@ def main() -> None:
         if args.validate_only:
             print(json.dumps({"date": args.date.isoformat(), "hours": parse_hours(args.hours), "valid": True}))
             return
-        collection = collect_day(args.output_root, args.input_root, args.date, parse_hours(args.hours), args.resume)
+        collection = collect_day(
+            args.output_root,
+            args.input_root,
+            args.date,
+            parse_hours(args.hours),
+            args.resume,
+            args.download_missing,
+            settings.values["source"]["archive_url_template"],
+            settings.values["source"]["timeout_seconds"],
+        )
         if args.command == "collect-day":
             print(collection)
             return
