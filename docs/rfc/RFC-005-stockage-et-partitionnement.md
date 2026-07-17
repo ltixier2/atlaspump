@@ -217,6 +217,12 @@ Cette RFC ne fixe pas un nombre de jours sans mesure du volume, du coût et de l
 
 Une restauration depuis R2 reconstruit les chemins relatifs sous `ATLAS_DATA_DIR`, vérifie hashes et manifeste, puis réindexe ou réconcilie Neon ; elle ne repose jamais sur un chemin absolu ancien.
 
+### Politique C v1 : quarantaine non destructive
+
+La première application est strictement planificatrice : `--dry-run` est actif par défaut et aucune suppression physique n'est autorisée. Elle conserve intégralement lifecycles, outcomes et anomalies, tous les événements des tokens migrés ou anormaux, et un échantillon déterministe de 3 % des tokens ordinaires calculé par hash stable de `token_mint`. Raw et normalized restent `HOLD` dans une fenêtre glissante de sept jours; hors fenêtre ils deviennent seulement `DELETE_CANDIDATE`. Les événements sans mint forment une catégorie séparée `HOLD` dans cette version.
+
+Les états sont `DISCOVERED`, `HOLD`, `DELETE_CANDIDATE`, `DELETE_APPROVED`, `DELETED` et `FAILED`. Une transition directe de `DISCOVERED` à `DELETED` est interdite. Chaque manifest de rétention contient chemin relatif, taille, date logique, catégorie, justification, état et checksum pré-action. Une future action destructive exigera `DELETE_APPROVED`, dépendances vérifiées, journal et contrôle de restauration.
+
 ### Transfert des packs
 
 Un pack est un répertoire logique versionné contenant données, schéma, splits,
@@ -332,3 +338,4 @@ base, migration volumineuse ou politique destructive de rétention.
 | --- | --- | --- | --- |
 | 2026-07-17 | 0.1 | Création du brouillon | Équipe AtlasPump |
 | 2026-07-17 | 0.2 | Ajout des publications locales, indexation Neon, archivage R2 et workflow de réplication vérifiée. | Équipe AtlasPump |
+| 2026-07-17 | 0.3 | Politique C v1 non destructive : échantillonnage déterministe, fenêtre raw/normalized, états de quarantaine et manifestes de planification. | Équipe AtlasPump |

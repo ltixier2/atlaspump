@@ -208,6 +208,10 @@ def main() -> None:
     day.add_argument("--download-missing", action="store_true")
     day.add_argument("--validate-only", action="store_true")
     day.add_argument("--force", action="store_true", help="Reserved; published output is never overwritten")
+    retention = sub.add_parser("plan-retention", help="Create a non-destructive retention manifest")
+    retention.add_argument("--date", required=True, action="append", type=date.fromisoformat)
+    retention.add_argument("--output-root", required=True, type=Path)
+    retention.add_argument("--dry-run", action="store_true", default=True)
     args = parser.parse_args()
     from atlaspump.logging_config import configure_logging
 
@@ -251,6 +255,11 @@ def main() -> None:
         if not args.input.exists():
             parser.error(f"input does not exist: {args.input}")
         print(json.dumps(build_lifecycles(args.input, output, args.force, args.mint), indent=2))
+        return
+    if args.command == "plan-retention":
+        from atlaspump.retention_policy import plan_retention
+
+        print(plan_retention(args.output_root, args.date, args.dry_run))
         return
     if args.command == "backfill":
         from atlaspump.backfill import backfill_day, parse_hours
