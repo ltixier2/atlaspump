@@ -7,7 +7,7 @@
 | Statut | DRAFT |
 | Auteur | Équipe AtlasPump |
 | Date | 2026-07-17 |
-| Version | 0.1 |
+| Version | 0.2 |
 
 ## Résumé
 
@@ -82,6 +82,25 @@ directement une ligne canonique. Il émet une enveloppe contenant le payload
 original et ses métadonnées. Le Raw Ingestion Layer écrit ces enveloppes,
 finalise les fichiers atomiquement et publie le manifeste après contrôle.
 
+### Deux pipelines live découplés
+
+Le **Discovery Collector** détecte rapidement les nouveaux tokens ou mints, enregistre les métadonnées minimales disponibles et conserve provenance, horodatage, fournisseur et identifiant de découverte. Il publie une demande de suivi persistante sans attendre la collecte détaillée : un token lent, en erreur ou expiré ne doit jamais bloquer la découverte.
+
+Le **Detail Collector** consomme ces demandes et collecte les événements et transactions détaillés. Il gère concurrence, rotation, priorité, expiration, reprise et backfill. Il applique une politique versionnée pour arrêter ou réduire le suivi, sans arrêter le Discovery Collector. Les deux pipelines écrivent des enveloppes de capture compatibles avec le même raw et les mêmes contrats replay/live.
+
+Le contrat persistant entre eux est `token_tracking_request` :
+
+| Champ minimal | Sémantique |
+| --- | --- |
+| `tracking_request_id`, `token_mint` | Identité de la demande et mint à suivre. |
+| `discovered_at`, `discovery_source`, `discovery_event_id` | Provenance et instant de découverte. |
+| `priority`, `tracking_status` | Ordonnancement et état (`PENDING`, `ACTIVE`, `RETRY`, `STOPPED`, `EXPIRED` ou équivalent versionné). |
+| `requested_tracking_start`, `tracking_deadline` | Bornes demandées, distinctes de la couverture effectivement obtenue. |
+| `last_checkpoint`, `attempt_count`, `next_retry_at` | Reprise, tentative et planification persistantes. |
+| `stop_reason`, `policy_version` | Raison d'arrêt/réduction et politique applicable. |
+
+Neon persiste ce contrat, les checkpoints et les états de run. Lorsqu'il est indisponible, Cerebro journalise localement et met les mises à jour en file durable pour réconciliation ; le raw local reste la preuve immédiate. Le backlog est mesuré par priorité et âge. Les demandes jamais activées, expirées ou arrêtées sans collecte sont détectées, et le délai `discovered_at` → début effectif de collecte détaillée est une métrique obligatoire.
+
 ### Modes de collecte
 
 | Mode | Entrée | Unité de reprise | Fin de fenêtre |
@@ -127,7 +146,7 @@ publication existante.
 
 Chaque fichier finalisé est associé à son hash, sa taille, sa fenêtre logique,
 sa partition source, ses comptages, son run, sa version d'adaptateur et son
-manifeste. Le manifeste porte l'état PROVISIONAL, COMPLETE, PARTIAL ou FAILED.
+manifeste. Le manifeste porte un état de publication défini par RFC-005 ; qualité, couverture et utilisabilité sont portées séparément par RFC-007.
 
 Les payloads invalides ou inconnus restent traçables dans le raw ou une zone
 de rejets liée au même run. Leur exclusion d'une couche dérivée ne supprime
@@ -147,8 +166,7 @@ marge de recouvrement lorsque le fournisseur peut rejouer des éléments. Les
 doublons de recouvrement sont conservés et identifiés ; leur déduplication
 analytique suit RFC-003 et ne modifie pas le raw.
 
-Une erreur non récupérable bloque la publication complète de la fenêtre. Un
-état PARTIAL n'est possible que si les trous, erreurs et bornes sont manifestés.
+Une erreur non récupérable bloque la publication complète de la fenêtre. Une couverture `PARTIAL` n'est possible que si les trous, erreurs et bornes sont manifestés ; elle ne sert pas d'état de publication.
 
 ### Idempotence
 
@@ -198,9 +216,7 @@ Le manifeste utilise le contrat Manifest de RFC-003 et peut ajouter :
     error_count
     status
 
-COMPLETE signifie que le contrat de couverture déclaré est satisfait ; cela ne
-prouve pas que le fournisseur n'a jamais perdu un événement. PARTIAL et FAILED
-doivent expliciter la raison, la fenêtre et les unités à reprendre.
+`coverage_status=COMPLETE` signifie que le contrat de couverture déclaré est satisfait ; cela ne prouve pas que le fournisseur n'a jamais perdu un événement. `PARTIAL` ou `MISSING` doivent expliciter la raison, la fenêtre et les unités à reprendre. Les états de publication sont ceux de RFC-005.
 
 ### Sources secondaires
 
@@ -217,7 +233,7 @@ alimenter source_events, mais ne publie pas encore CanonicalEvent.
 
 Le lien minimal est :
 
-    capture envelope → raw_reference/source_event_id → CanonicalEvent.raw_reference
+    capture envelope → raw_reference/source_event_id → CanonicalObservation.raw_reference
 
 Les temps blockchain, archive et réception restent distincts. UNKNOWN, INVALID
 et les absences sont conservés avec provenance et ne deviennent pas des
@@ -226,6 +242,8 @@ valeurs sentinelles.
 ## Impacts opérationnels
 
 - Cerebro est le nœud d'exécution prioritaire, avec ATLAS_DATA_DIR configurable.
+- Les raw et payloads détaillés résident d'abord dans les fichiers locaux de Cerebro ; les publications validées sont uploadées asynchronement vers R2.
+- Une indisponibilité temporaire de Neon ou R2 n'interrompt pas une collecte locale : journaux et files locales permettent la reprise et la réconciliation.
 - Collecte et normalisation sont rejouables indépendamment.
 - Les jobs sont supervisables par fenêtre, run, partition et manifeste.
 - Les fichiers partiels ne sont jamais présentés comme complets.
@@ -278,12 +296,14 @@ L'implémentation devra démontrer :
 4. détection d'un payload divergent sous une identité ;
 5. conservation des payloads invalides et inconnus ;
 6. finalisation atomique sans fichier partiel publié ;
-7. manifestes corrects pour COMPLETE, PARTIAL et FAILED ;
+7. manifestes corrects avec état de publication RFC-005 et `coverage_status` explicite ;
 8. tolérance aux doublons de recouvrement ;
 9. séparation des temps source, archive et réception ;
 10. simulation d'un retard, d'un trou et d'une reconnexion live ;
 11. absence de secrets dans logs et manifests ;
 12. relecture du raw par une autre version de normalisation.
+13. découverte continue malgré une collecte détaillée bloquée, puis réconciliation Neon/R2 après indisponibilité.
+14. détection des demandes jamais suivies et mesure du délai découverte → début détaillé.
 
 ## Critères d'acceptation
 
@@ -300,7 +320,6 @@ Aucune implémentation structurante ne démarre avant ACCEPTED.
 - PumpApi fournit-il un curseur stable et une rétention suffisante ?
 - Quelle marge de recouvrement appliquer à chaque source ?
 - Quelle durée de silence déclenche une alerte live ?
-- Quand une fenêtre PARTIAL doit-elle être rejouée ?
 - Quel niveau de duplication conserver avant compaction ?
 - Faut-il une seconde capture indépendante pour mesurer la couverture ?
 - Quelle stratégie de backoff respecter par fournisseur ?
@@ -316,3 +335,4 @@ de collecteur ou de service live structurant.
 | Date | Version | Modification | Auteur |
 | --- | --- | --- | --- |
 | 2026-07-17 | 0.1 | Création du brouillon | Équipe AtlasPump |
+| 2026-07-17 | 0.2 | Séparation Discovery/Detail Collector, contrat de suivi persistant et fonctionnement dégradé Neon/R2. | Équipe AtlasPump |

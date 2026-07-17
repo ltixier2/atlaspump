@@ -16,4 +16,4 @@ flowchart LR
   Manifest --> Predictions
 ```
 
-Règles clés : UTC explicite, `NULL` sans valeur sentinelle, montants exacts en unités minimales ou decimal, `block` préservé comme champ source, censure explicite, schéma semver et manifests pour toute publication.
+Règles clés : UTC explicite, `NULL` sans valeur sentinelle, montants exacts en unités minimales ou decimal, `slot`, `block_height` et `provider_block` sans conversion implicite, identités source/observation/logique distinctes, censure explicite, schéma semver et manifests pour toute publication.

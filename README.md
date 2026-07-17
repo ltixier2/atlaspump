@@ -41,4 +41,5 @@ l'acceptation de sa RFC structurante.
 
 Les données volumineuses, modèles, checkpoints et bases locales ne doivent
 jamais être stockés dans Git. Les chemins physiques sont configurables avec
-`ATLAS_DATA_DIR` ; voir [.env.example](.env.example).
+`ATLAS_DATA_DIR` ; Cerebro est le stockage opérationnel, Neon le catalogue et
+Cloudflare R2 la sauvegarde distante restaurable ; voir [.env.example](.env.example).

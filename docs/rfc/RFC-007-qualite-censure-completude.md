@@ -7,7 +7,7 @@
 | Statut | DRAFT |
 | Auteur | Équipe AtlasPump |
 | Date | 2026-07-17 |
-| Version | 0.1 |
+| Version | 0.2 |
 
 ## Résumé
 
@@ -73,13 +73,11 @@ censure, activité et complétude.
 | identity_status | UNIQUE, DUPLICATE, COLLISION | L'identité est-elle stable et non contradictoire ? |
 | temporal_status | ORDERED, LATE, OUT_OF_ORDER, UNKNOWN | L'ordre temporel est-il fiable ? |
 | coverage_status | COMPLETE, PARTIAL, MISSING | La source couvre-t-elle la fenêtre déclarée ? |
-| quality_status | VALID, PARTIAL, INVALID | La sortie est-elle utilisable selon la politique ? |
+| contract_status | SATISFIED, NOT_SATISFIED, NOT_EVALUABLE | Le contrat déclaré de fenêtre/politique est-il évaluable et satisfait ? |
+| usability_status | VALID, LIMITED, INVALID | La sortie est-elle utilisable selon la politique ? |
 | censoring_status | NONE, LEFT, RIGHT, BOTH | Quelles bornes de connaissance manquent ? |
-| completeness_status | COMPLETE, PARTIAL, INCOMPLETE | Le contrat de fenêtre est-il satisfait ? |
 
-Les valeurs exactes peuvent évoluer avec le schéma, mais leur séparation est
-obligatoire. Une sortie peut être PARTIAL et néanmoins utilisable pour une
-analyse descriptive, tout en étant exclue d'un label de survie.
+Les valeurs exactes peuvent évoluer avec le schéma, mais leur séparation est obligatoire. Une sortie avec `coverage_status=PARTIAL` peut avoir `usability_status=LIMITED` et rester exploitable pour une analyse descriptive, tout en ayant `contract_status=NOT_SATISFIED` pour un label de survie.
 
 ### Niveaux de contrôle
 
@@ -108,8 +106,7 @@ concernés.
 | ERROR | sortie dégradée ou couverture insuffisante | exclure de certains usages |
 | BLOCKING | contradiction ou intégrité compromise | ne pas publier comme complète |
 
-Une sévérité ne supprime jamais l'entrée. La politique du dataset décide si un
-statut PARTIAL ou une anomalie WARNING est acceptable pour son usage.
+Une sévérité ne supprime jamais l'entrée. La politique du dataset décide si une couverture `PARTIAL`, une utilisabilité `LIMITED` ou une anomalie WARNING est acceptable pour son usage.
 
 ### Contrôles obligatoires
 
@@ -138,14 +135,13 @@ contrat de suivi, jamais par une supposition économique.
 
 | Situation | Statut minimal |
 | --- | --- |
-| Activité observée avant le début de la fenêtre | LEFT_CENSORED |
-| Token encore observable à la fin de la fenêtre | RIGHT_CENSORED |
-| Les deux bornes sont hors couverture | BOTH_CENSORED |
+| Activité observée avant le début de la fenêtre | `censoring_status=LEFT` |
+| Token encore observable à la fin de la fenêtre | `censoring_status=RIGHT` |
+| Les deux bornes sont hors couverture | `censoring_status=BOTH` |
 | Fenêtre et suivi satisfaits | NONE, sous réserve de qualité |
-| Partition requise manquante | coverage PARTIAL ou MISSING |
+| Partition requise manquante | `coverage_status=PARTIAL` ou `MISSING` |
 
-LEFT_CENSORED ne signifie pas que la création est inconnue dans l'histoire,
-seulement qu'elle n'est pas observée dans cette fenêtre. RIGHT_CENSORED ne
+`LEFT` ne signifie pas que la création est inconnue dans l'histoire, seulement qu'elle n'est pas observée dans cette fenêtre. `RIGHT` ne
 signifie pas que le token a échoué ou qu'il est encore économiquement actif.
 
 ### Complétude
@@ -154,8 +150,7 @@ La complétude est relative à un contrat déclaré : source, fenêtre, cohorte,
 suivi, période de grâce et qualité minimale. Un manifest doit identifier ce
 contrat.
 
-Un lifecycle peut être COMPLETE pour une fenêtre d'une heure et PARTIAL pour
-une fenêtre de suivi de 60 minutes. Une création seule ne suffit pas à
+Un lifecycle peut avoir `coverage_status=COMPLETE` pour une fenêtre d'une heure et `contract_status=NOT_SATISFIED` pour une fenêtre de suivi de 60 minutes. Une création seule ne suffit pas à
 conclure à un succès ou à un échec.
 
 La politique de complétude indique au minimum :
@@ -175,14 +170,14 @@ Les couches aval reçoivent les statuts et leurs raisons :
 
 | Consommateur | Règle |
 | --- | --- |
-| Lifecycle | conserve censure, couverture, anomalies et qualité |
+| Lifecycle | conserve censure, `coverage_status`, `contract_status`, `usability_status` et anomalies |
 | Feature Lab | associe cutoff, statut et raison aux features |
 | Label | porte censoring_status et label_policy_version |
 | Dataset | définit explicitement filtres et tolérances |
 | Backtest | exclut toute observation indisponible au cutoff |
 | Rapport | affiche les limites au lieu de les masquer |
 
-Une politique de dataset peut exclure INVALID ou certaines PARTIAL, mais elle
+Une politique de dataset peut exclure `usability_status=INVALID` ou certaines couvertures `PARTIAL`, mais elle
 doit compter les exclus, conserver le manifest et ne pas modifier l'entrée.
 
 ### Rapports et manifests
@@ -208,19 +203,14 @@ dénominateur, la fenêtre et la population concernés.
 
 ### Règles de décision
 
-Une publication COMPLETE exige intégrité des fichiers, couverture déclarée,
-absence d'anomalie BLOCKING et respect des seuils de la politique. Une
-publication PARTIAL est possible si ses limitations sont quantifiées. Une
-publication INVALID indique une contradiction ou une corruption qui empêche
-un usage fiable, sans supprimer la donnée originale.
+Une publication locale est régie par l'état de publication RFC-005. Une sortie avec `coverage_status=COMPLETE`, `contract_status=SATISFIED` et `usability_status=VALID` exige intégrité, couverture déclarée, absence d'anomalie BLOCKING et respect des seuils de la politique. `coverage_status=PARTIAL`, `contract_status=NOT_SATISFIED` ou `usability_status=LIMITED` doivent quantifier leurs limites. `usability_status=INVALID` indique une contradiction ou corruption qui empêche un usage fiable, sans supprimer la donnée originale.
 
 Les seuils numériques sont propres à la couche et à l'usage. Ils sont versionnés
 et ne doivent pas être cachés dans le code ou un notebook.
 
 ## Modèle de données concerné
 
-RFC-003 reste propriétaire de quality_status, censoring_status, lifecycle_status,
-lifecycle_complete, des nulls et des manifests. RFC-006 reste propriétaire de
+RFC-003 reste propriétaire de `coverage_status`, `contract_status`, `usability_status`, `censoring_status`, `activity_state`, des nulls et des manifests. RFC-006 reste propriétaire de
 la reconstruction et de ses anomalies. RFC-007 ajoute les contrats de contrôle,
 les règles et les rapports ; elle ne remplace aucun fait observé.
 
@@ -254,7 +244,7 @@ entrées, sans mutation silencieuse.
 
 ## Observabilité
 
-Les métriques minimales sont lignes contrôlées, taux VALID/PARTIAL/INVALID,
+Les métriques minimales sont lignes contrôlées, distributions `coverage_status`, `contract_status` et `usability_status`,
 UNKNOWN, doublons, collisions, erreurs par règle, anomalies par sévérité,
 partitions manquantes, taux de censure, complétude par cohorte, durée, mémoire,
 reprises, manifests publiés et exclusions par motif.
@@ -305,3 +295,4 @@ correction silencieuse ou implémentation structurante du Quality Layer.
 | Date | Version | Modification | Auteur |
 | --- | --- | --- | --- |
 | 2026-07-17 | 0.1 | Création du brouillon | Équipe AtlasPump |
+| 2026-07-17 | 0.2 | Harmonisation des dimensions couverture, contrat, utilisabilité et censure avec RFC-003/RFC-006. | Équipe AtlasPump |

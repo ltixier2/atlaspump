@@ -32,6 +32,7 @@ dérivées et inférences doivent rester distincts.
 - Les fournisseurs, machines et chemins ne doivent pas créer de verrouillage.
 - Les données volumineuses restent hors Git ; `ATLAS_DATA_DIR` configure les
   emplacements physiques.
+- Cerebro conserve l'opérationnel local, Neon le catalogue et Cloudflare R2 la copie durable restaurable.
 - Aucune brique structurante n'est implémentée avant l'acceptation de sa RFC.
 
 ## Mesure du succès

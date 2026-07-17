@@ -14,4 +14,4 @@ flowchart LR
   Lifecycle --> Outcomes[TokenOutcome]
 ```
 
-Les dimensions sont : `activity_state`, `migration_state`, `censoring_state`, `completeness_state` et `quality_state`. Une migration inférée ne remplace jamais une migration observée ; une absence de couverture produit de la censure, pas une conclusion économique.
+Les dimensions sont : `activity_state`, `migration_state`, `censoring_status`, `coverage_status`, `contract_status` et `usability_status`. Une migration inférée ne remplace jamais une migration observée ; une absence de couverture produit de la censure, pas une conclusion économique.

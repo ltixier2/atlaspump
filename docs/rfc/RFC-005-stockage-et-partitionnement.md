@@ -7,7 +7,7 @@
 | Statut | DRAFT |
 | Auteur | Équipe AtlasPump |
 | Date | 2026-07-17 |
-| Version | 0.1 |
+| Version | 0.2 |
 
 ## Résumé
 
@@ -31,7 +31,7 @@ traitement.
 
 Cerebro dispose du volume dédié /mnt/atlaspump. Ce chemin est une convention
 locale et doit rester configurable par ATLAS_DATA_DIR. Les données volumineuses
-ne sont pas versionnées dans Git.
+ne sont pas versionnées dans Git. Cloudflare R2 est la sauvegarde distante durable des publications et Neon PostgreSQL en indexe les métadonnées et états, sans héberger les lignes événementielles massives.
 
 ## Problème
 
@@ -60,7 +60,6 @@ rejouabilité ; une rétention illimitée rend l'exploitation fragile.
 - modifier le raw en place ou le convertir comme unique archive ;
 - définir les champs canoniques de RFC-003 ;
 - définir les règles de qualité ou de lifecycle de RFC-006 et RFC-007 ;
-- imposer une réplication distante avant mesure du besoin ;
 - stocker datasets volumineux ou modèles dans Git ;
 - optimiser une requête particulière au détriment de la lisibilité des couches.
 
@@ -90,8 +89,7 @@ La racine logique est ATLAS_DATA_DIR. L'organisation proposée est :
     tmp/
 
 Les chemins absolus ne figurent ni dans les manifests portables ni dans les
-datasets. Un manifest référence des chemins relatifs à ATLAS_DATA_DIR et des
-hashes.
+datasets. Un manifest référence des chemins relatifs à ATLAS_DATA_DIR, des clés objet R2 et des hashes.
 
 ### Responsabilité des couches
 
@@ -108,6 +106,8 @@ hashes.
 | manifests | JSON | provenance, hashes, comptages, statut |
 | reports | Markdown/JSON | audit humain et synthèses |
 | cache/tmp | format local | supprimable, jamais source canonique |
+
+Le stockage local de travail (`tmp`, `cache`, journaux et files durables) est distinct de la publication locale finalisée. R2 conserve l'archive/sauvegarde distante des raw et Parquet publiés. Neon indexe publications, objets, hashes, versions, états et dépendances ; il ne stocke pas les lignes événementielles massives.
 
 Une couche dérivée ne remplace jamais son entrée. Les rejets et UNKNOWN sont
 conservés ou référencés selon la politique de la couche ; ils ne sont pas
@@ -155,10 +155,9 @@ seront calibrés par benchmark. Le système doit néanmoins détecter les petits
 fichiers, les fichiers orphelins et les partitions déséquilibrées avant de
 publier une nouvelle version.
 
-### Publication et manifests
+### Publication, réplication et manifests
 
-Une sortie est visible comme publiée seulement si son manifest est valide et
-son statut est COMPLETE ou PARTIAL explicitement autorisé. Le manifest doit
+L'état de publication est indépendant des statuts de qualité RFC-007 : `LOCAL_PROVISIONAL`, `LOCAL_COMPLETE`, `REMOTE_PENDING`, `REMOTE_VERIFIED`, `REMOTE_FAILED`. Une sortie est localement publiée quand son manifeste local est valide et son état `LOCAL_COMPLETE` ou `REMOTE_PENDING`; une couverture `PARTIAL` ou une utilisabilité limitée restent des attributs séparés. Le manifest doit
 référencer :
 
     manifest_id
@@ -181,12 +180,13 @@ référencer :
     split_version
     code_commit
     environment_fingerprint
-    status
+    publication_status
+    r2_object_keys
+    remote_verification
 
-Les manifests sont eux-mêmes append-only et peuvent être indexés par date et
-type. Un manifest PARTIAL explicite les partitions manquantes, les erreurs et
-les limites d'usage. Un fichier sans manifest correspondant n'est pas une
-publication analytique fiable.
+Les manifests sont eux-mêmes append-only et peuvent être indexés par date et type dans Neon. Les trous et limites d'usage sont portés par `coverage_status`, `contract_status` et `usability_status`, pas par l'état de publication. Un fichier sans manifest correspondant n'est pas une publication analytique fiable.
+
+Pour toute publication durable, le workflow est : (1) écriture temporaire locale ; (2) validation ; (3) hash et comptages ; (4) renommage atomique ; (5) création du manifeste local ; (6) indexation dans Neon ; (7) upload asynchrone vers R2 ; (8) vérification distante du hash ou de l'intégrité ; (9) mise à jour de l'état de réplication. Un échec R2 ne rend pas invalide une publication locale valide : il devient `REMOTE_FAILED`, est visible et retenté. Si Neon est indisponible, l'indexation est journalisée localement et réconciliée ultérieurement.
 
 ### DuckDB
 
@@ -213,11 +213,9 @@ La rétention initiale est une politique par couche, configurable et manifestée
 | features/datasets/packs | conservation des versions publiées et consommées |
 | cache/tmp/logs | rotation et suppression opérationnelle contrôlée |
 
-Cette RFC ne fixe pas un nombre de jours sans mesure du volume, du coût et de
-la capacité de restauration. Toute suppression doit être précédée d'un
-rapport listant les fichiers, hashes, manifests dépendants et impact sur la
-rejouabilité. Le raw et les manifests de référence bénéficient d'une
-protection renforcée.
+Cette RFC ne fixe pas un nombre de jours sans mesure du volume, du coût et de la capacité de restauration. La politique de sauvegarde locale et distante est versionnée et mesurée avant de fixer les durées. Toute suppression doit être précédée d'un rapport listant les fichiers, hashes, manifests dépendants et impact sur la rejouabilité ; elle exige une politique explicite, une vérification distante et un contrôle des dépendances. Le raw et les manifests de référence bénéficient d'une protection renforcée.
+
+Une restauration depuis R2 reconstruit les chemins relatifs sous `ATLAS_DATA_DIR`, vérifie hashes et manifeste, puis réindexe ou réconcilie Neon ; elle ne repose jamais sur un chemin absolu ancien.
 
 ### Transfert des packs
 
@@ -250,8 +248,7 @@ comptages sont les preuves d'intégrité.
   uniquement la présence d'un fichier.
 - La capacité libre, les fichiers orphelins et l'âge des publications sont
   surveillés.
-- Les sauvegardes et réplications sont une étape d'exploitation à préciser
-  dans RFC-013.
+- Les files locales de réplication, les échecs R2 et les retards d'indexation Neon sont surveillés et rejouables.
 
 ## Impacts sécurité
 
@@ -282,9 +279,8 @@ doivent déclarer les versions supportées et ne pas déduire une colonne absent
 
 Les métriques minimales sont : espace total et libre, croissance par couche,
 fichiers et bytes par partition, petits fichiers, fichiers orphelins, échecs de
-hash, manifests manquants, publications PARTIAL, durée et débit de compaction,
-âge du dernier fichier, âge du dernier manifest, erreurs DuckDB et temps de
-transfert des packs.
+hash, manifests manquants, distributions `coverage_status` et états de publication, durée et débit de compaction,
+âge du dernier fichier, âge du dernier manifest, erreurs DuckDB, état et âge de réplication R2, échecs/retries, retards d'indexation Neon et temps de transfert des packs.
 
 Chaque alerte cite couche, partition, version, run et manifest concernés.
 
@@ -302,6 +298,8 @@ L'implémentation devra démontrer :
 8. application contrôlée d'une politique de rétention ;
 9. compatibilité de lecture entre versions autorisées ;
 10. comportement documenté lorsque l'espace libre est insuffisant.
+11. publication locale valide et reprise de réplication après indisponibilité R2 ou Neon.
+12. restauration R2 vers des chemins relatifs reconstruits sous `ATLAS_DATA_DIR`.
 
 ## Critères d'acceptation
 
@@ -318,7 +316,6 @@ Aucune création de base ou migration volumineuse ne démarre avant ACCEPTED.
 - Quel volume quotidien réel et quelle capacité de réserve doivent guider les
   seuils de partition et de compaction ?
 - Quelle durée chiffrée retenir par couche après mesure du stockage ?
-- Faut-il une réplication hors Cerebro pour le raw et les manifests ?
 - Quelle stratégie de verrouillage et de reprise utiliser pour les compactions ?
 - Quelle taille cible de fichier Parquet maximise lecture et transfert ?
 - Quand matérialiser une vue DuckDB plutôt que la recalculer ?
@@ -334,3 +331,4 @@ base, migration volumineuse ou politique destructive de rétention.
 | Date | Version | Modification | Auteur |
 | --- | --- | --- | --- |
 | 2026-07-17 | 0.1 | Création du brouillon | Équipe AtlasPump |
+| 2026-07-17 | 0.2 | Ajout des publications locales, indexation Neon, archivage R2 et workflow de réplication vérifiée. | Équipe AtlasPump |

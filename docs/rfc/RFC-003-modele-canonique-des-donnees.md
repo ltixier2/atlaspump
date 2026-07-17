@@ -7,7 +7,7 @@
 | Statut | DRAFT |
 | Auteur | Équipe AtlasPump |
 | Date | 2026-07-16 |
-| Version | 0.1 |
+| Version | 0.2 |
 
 ## Résumé
 
@@ -19,7 +19,7 @@ Cette RFC définit le langage commun d'AtlasPump : entités, événements, ident
 - Les faits observés, données dérivées, labels et prédictions sont des couches distinctes.
 - Toute donnée possède provenance, version de schéma et référence raw ou manifeste lorsque applicable.
 - Les identifiants sont déterministes lorsque les éléments stables sont disponibles.
-- `block` conserve ce nom : il n'est jamais renommé `slot` sans preuve fournisseur.
+- Les positions Solana restent distinctes : `slot`, `block_height` et toute valeur fournisseur non mappée.
 - Les données censurées sont explicitement représentées et ne valent pas échec.
 - Cette RFC ne définit ni algorithme de lifecycle, ni labels métier, ni formules de features.
 
@@ -39,11 +39,12 @@ Cette RFC définit le langage commun d'AtlasPump : entités, événements, ident
 ```mermaid
 erDiagram
   MANIFEST ||--o{ SOURCE_EVENT : decrit
-  SOURCE_EVENT ||--o{ CANONICAL_EVENT : normalise_en
-  CANONICAL_EVENT }o--|| TOKEN : concerne
-  CANONICAL_EVENT }o--o| WALLET : implique
-  CANONICAL_EVENT }o--o| POOL : concerne
-  CANONICAL_EVENT ||--o{ TRANSFER : contient
+  SOURCE_EVENT ||--o{ CANONICAL_OBSERVATION : normalise_en
+  CANONICAL_OBSERVATION }o--o| LOGICAL_EVENT : rapproche
+  CANONICAL_OBSERVATION }o--|| TOKEN : concerne
+  CANONICAL_OBSERVATION }o--o| WALLET : implique
+  CANONICAL_OBSERVATION }o--o| POOL : concerne
+  CANONICAL_OBSERVATION ||--o{ TRANSFER : contient
   TOKEN ||--o{ TOKEN_LIFECYCLE : reconstruit
   TOKEN ||--o{ TOKEN_OUTCOME : mesure
   TOKEN ||--o{ FEATURE_VALUE : caracterise
@@ -54,7 +55,7 @@ erDiagram
   MANIFEST ||--o{ PREDICTION : trace
 ```
 
-Un événement source est le message tel que reçu. Un événement canonique est une interprétation normalisée d'un ou plusieurs messages source. Un événement logique est une occurrence métier dédupliquée, identifiée par `event_id` ; plusieurs sources peuvent contribuer à la même occurrence logique.
+Un événement source est le message tel que reçu. Une observation canonique est sa normalisation, identifiée par `canonical_observation_id`. Un événement logique est une occurrence blockchain cross-source seulement lorsqu'un rapprochement fiable est démontré ; son identifiant est `logical_event_id`. Sans preuve suffisante, plusieurs observations sont conservées avec une relation de similarité ou de rapprochement, sans fusion silencieuse.
 
 ## SourceEvent
 
@@ -68,28 +69,32 @@ Un événement source est le message tel que reçu. Un événement canonique est
 | `raw_payload` | binary/string | non | Octets ou JSON source immuable. |
 | `ingestion_run_id`, `file_manifest_id` | string | non/oui | Run d'ingestion ; manifeste nullable avant finalisation. |
 
-## CanonicalEvent
+## CanonicalObservation et LogicalEvent
 
 Tous les timestamps sont UTC, sans timezone implicite, en précision microseconde (lecture milliseconde acceptée puis normalisée). Les montants et prix sont décrits dans « Unités ».
 
 | Champ | Type logique | Null | Origine et validation |
 | --- | --- | --- | --- |
-| `event_id` | string | non | Identité logique déterministe, unique pour `id_strategy_version`. |
+| `canonical_observation_id` | string | non | Identité déterministe de cette normalisation fournisseur, unique pour `id_strategy_version`. |
+| `logical_event_id` | string | oui | Identité cross-source seulement si signature et indices/preuves permettent une correspondance fiable ; sinon `NULL`. |
 | `event_type` | enum | non | `BUY`, `SELL`, `TRANSFER`, `CREATE_TOKEN`, `CREATE_POOL`, `MIGRATE`, `ADD_LIQUIDITY`, `REMOVE_LIQUIDITY`, `UNKNOWN`, `INVALID_JSON`. |
 | `source` | string | non | Fournisseur d'observation ; pas une preuve d'unicité logique. |
 | `signature` | string | oui | Signature de transaction observée ; format Solana validé si présent. |
-| `block` | integer | oui | Champ source nommé block ; aucune assimilation implicite à un slot. |
-| `transaction_index`, `instruction_index`, `event_index` | integer | oui | Indices non négatifs dans leur contexte lorsque connus. |
+| `slot` | integer | oui | Slot Solana, uniquement lorsqu'explicitement connu ; aucune conversion implicite. |
+| `block_height` | integer | oui | Hauteur de bloc, uniquement lorsqu'explicitement connue ; aucune conversion implicite. |
+| `provider_block` | string/integer | oui | Valeur nommée `block` par le fournisseur sans preuve de mapping vers `slot` ou `block_height`. |
+| `source_position`, `transaction_index`, `instruction_index`, `event_index` | string/integer | oui | Position et indices fournisseur, non négatifs pour les indices numériques ; pas d'inférence de correspondance. |
 | `blockchain_timestamp`, `archive_timestamp`, `received_at` | timestamp UTC | oui/oui/non | Temps chaîne, archive et réception, distincts. |
 | `token_mint`, `wallet`, `creator`, `pool`, `pool_id`, `pool_created_by` | string | oui | Adresses/identifiants observés ; validateurs de format si applicables. |
 | `protocol_scope` | enum | non | `PUMPFUN`, `PUMPSWAP`, `OTHER`, `UNKNOWN`. |
 | `side` | enum | oui | `BUY`/`SELL` si sémantiquement applicable. |
-| `sol_amount`, `token_amount`, `price_sol_per_token`, `market_cap_sol` | decimal | oui | Montants explicitement unitaires ; jamais négatifs sauf convention future explicitée. |
-| `sol_in_pool`, `tokens_in_pool`, `v_sol_in_bonding_curve`, `v_tokens_in_bonding_curve` | decimal | oui | Réserves observées ou fournisseur ; précision déclarée. |
-| `priority_fee_sol` | decimal | oui | Frais prioritaire en SOL. |
+| `sol_amount_lamports`, `token_amount_atomic` | integer | oui | Unités atomiques brutes lorsqu'elles sont disponibles ; unité token et `token_decimals` obligatoires pour l'interprétation. |
+| `sol_amount`, `token_amount`, `price_sol_per_token`, `market_cap_sol` | decimal | oui | Valeurs dérivées avec unité, précision et échelle explicites ; jamais flottant binaire persistant. |
+| `sol_in_pool`, `tokens_in_pool`, `v_sol_in_bonding_curve`, `v_tokens_in_bonding_curve`, `priority_fee_sol` | decimal | oui | Réserves/frais avec unité, précision, échelle et provenance déclarées. |
 | `token_program` | string | oui | Programme observé ; non inféré dans normalized. |
 | `schema_version`, `normalization_version` | string | non | Versions obligatoires de contrat et transformation. |
 | `raw_reference` | string/list | non | Référence(s) `source_event_id` ou hash/manifeste permettant le retour raw. |
+| `match_status`, `match_evidence` | enum / string/list | non/oui | `NOT_ATTEMPTED`, `MATCHED`, `SIMILAR`, `AMBIGUOUS` ; preuves de rapprochement versionnées. |
 
 Les champs `tradersInvolved`, `transfers`, `postBalances`, `burnedLiquidity` et autres extensions fournisseur sont conservés en raw ou tables enfants/extensions versionnées ; ils ne deviennent pas obligatoires du noyau sans RFC.
 
@@ -100,26 +105,26 @@ L'identité est `mint`. Métadonnées observées, état historique, état couran
 | Groupe | Champs | Règle |
 | --- | --- | --- |
 | Identité | `mint`, `token_program`, `schema_version` | `mint` non null et stable. |
-| Observation | `first_observed_at`, `last_observed_at`, `creation_signature`, `creation_block`, `creation_timestamp` | Faits observés ; absence admise. |
+| Observation | `first_observed_at`, `last_observed_at`, `creation_signature`, `creation_slot`, `creation_block_height`, `creation_provider_block`, `creation_timestamp` | Faits observés ; aucune conversion entre positions ; absence admise. |
 | Métadonnées | `symbol`, `name`, `metadata_uri`, `freeze_authority`, `mint_authority`, `creator_fee_address` | Null si absentes/non observées ; pas de valeur vide. |
 | Créateur | `creator_observed`, `creator_inferred` | Deux champs distincts ; l'inféré est curated et porte provenance/confiance. |
-| Pools/état | `initial_pool`, `final_pool`, `current_protocol_scope`, `quality_status`, `lifecycle_status` | `current` est un snapshot dérivé horodaté, jamais une réécriture de l'historique. |
+| Pools/état | `initial_pool`, `final_pool`, `current_protocol_scope`, `coverage_status`, `contract_status`, `usability_status`, `activity_state` | `current` est un snapshot dérivé horodaté, jamais une réécriture de l'historique. |
 
 ## Wallet
 
-`address` est la clé. `first_observed_at`, `last_observed_at`, `observed_roles`, `is_creator_observed`, `is_buyer_observed`, `is_seller_observed`, `is_liquidity_provider_observed`, `source_count`, `quality_status`, `schema_version` constituent le noyau. Les booléens observés signifient « au moins une observation qualifiée », non une identité intrinsèque. `smart_wallet`, `sniper` et `scammer` sont interdits dans cette entité : ce seront labels, scores ou inférences versionnés.
+`address` est la clé. `first_observed_at`, `last_observed_at`, `observed_roles`, `is_creator_observed`, `is_buyer_observed`, `is_seller_observed`, `is_liquidity_provider_observed`, `source_count`, `coverage_status`, `contract_status`, `usability_status`, `schema_version` constituent le noyau. Les booléens observés signifient « au moins une observation qualifiée », non une identité intrinsèque. `smart_wallet`, `sniper` et `scammer` sont interdits dans cette entité : ce seront labels, scores ou inférences versionnés.
 
 ## Pool
 
-La clé est `pool_id`; `pool_type`, `protocol_scope`, `token_mint`, `quote_mint`, `created_at`, `created_by`, `fee_rate`, `initial_sol_reserve`, `initial_token_reserve`, `final_sol_reserve`, `final_token_reserve`, `burned_liquidity`, `quality_status`, `schema_version` sont les champs conceptuels. `pool_type` distingue `PUMPFUN_BONDING_CURVE_VIRTUAL`, `PUMPSWAP_AMM`, `OTHER_AMM`, `UNKNOWN`. Une bonding curve virtuelle n'est pas assimilée à un pool AMM réel.
+La clé est `pool_id`; `pool_type`, `protocol_scope`, `token_mint`, `quote_mint`, `created_at`, `created_by`, `fee_rate`, `initial_sol_reserve`, `initial_token_reserve`, `final_sol_reserve`, `final_token_reserve`, `burned_liquidity`, `coverage_status`, `contract_status`, `usability_status`, `schema_version` sont les champs conceptuels. `pool_type` distingue `PUMPFUN_BONDING_CURVE_VIRTUAL`, `PUMPSWAP_AMM`, `OTHER_AMM`, `UNKNOWN`. Une bonding curve virtuelle n'est pas assimilée à un pool AMM réel.
 
 ## Transfer
 
-Décision provisoire : `TRANSFER` est un `CanonicalEvent` spécialisé et la table enfant `transfers` porte le détail potentiellement multiple. Sa clé est `transfer_id`; elle référence `event_id` et contient `from_address`, `to_address`, `mint`, `amount`, `is_native_sol`, `transfer_type`, `transfer_index`. `transfer_id` est déterministe à partir de l'événement et de l'index ; `transfer_index` est non négatif. Cette forme conserve le flux événementiel tout en évitant des colonnes répétées.
+Décision provisoire : `TRANSFER` est une `CanonicalObservation` spécialisée et la table enfant `transfers` porte le détail potentiellement multiple. Sa clé est `transfer_id`; elle référence `canonical_observation_id` et contient `from_address`, `to_address`, `mint`, montants atomiques/décimaux avec unités, `is_native_sol`, `transfer_type`, `transfer_index`. `transfer_id` est déterministe à partir de l'observation et de l'index ; `transfer_index` est non négatif. Cette forme conserve le flux événementiel tout en évitant des colonnes répétées.
 
 ## TokenLifecycle et TokenOutcome
 
-`TokenLifecycle` est curated et clé logique `(mint, lifecycle_version, lifecycle_run_id)`. Il contient `first_observed_timestamp`, `last_observed_timestamp`, `observation_duration_ms`, `creation_event_received`, `pumpfun_activity_observed`, `migration_explicit`, `migration_inferred`, `migration_confidence`, `pumpswap_activity_observed`, `pool_creation_received`, `liquidity_added`, `liquidity_removed`, `lifecycle_status`, `left_censored`, `right_censored`, `lifecycle_complete`, `quality_status`. Les flags observés et inférés sont distincts.
+`TokenLifecycle` est curated et clé logique `(mint, lifecycle_version, lifecycle_run_id)`. Il contient `first_observed_timestamp`, `last_observed_timestamp`, `observation_duration_ms`, `creation_event_received`, `pumpfun_activity_observed`, `migration_explicit`, `migration_inferred`, `migration_confidence`, `pumpswap_activity_observed`, `pool_creation_received`, `liquidity_added`, `liquidity_removed`, `activity_state`, `censoring_status`, `coverage_status`, `contract_status`, `usability_status`. Les flags observés et inférés sont distincts.
 
 `TokenOutcome` est derived, clé `(mint, outcome_version, observation_end)`, et contient `max_price`, `max_market_cap_sol`, `max_return_from_first`, `time_to_peak_ms`, `total_volume_sol`, `unique_wallet_count`, `maximum_drawdown`, `migrated_explicitly`, `pumpswap_observed`, `survived_5_minutes`, `survived_30_minutes`, `survived_60_minutes`, `reached_2x`, `reached_5x`, `reached_10x`. Il ne contient pas de champ final `success`.
 
@@ -140,8 +145,9 @@ Décision provisoire : `TRANSFER` est un `CanonicalEvent` spécialisé et la tab
 | Identifiant | Stratégie proposée |
 | --- | --- |
 | `source_event_id` | Identifiant fournisseur ; sinon hash de `source + partition + offset + payload_hash`, avec `id_strategy_version`. |
-| `event_id` | Hash versionné de `signature`, `event_type`, `mint`, `wallet`, indices disponibles et hash canonique du payload. |
-| `transfer_id` | Hash versionné de `event_id + transfer_index`. |
+| `canonical_observation_id` | Hash versionné de l'identité source, de la version de normalisation et des attributs normalisés ; ne confond pas les fournisseurs. |
+| `logical_event_id` | Hash versionné des seuls éléments blockchain concordants et suffisamment fiables (par exemple signature et indices d'instruction/événement) ; `NULL` sans preuve. Le hash complet du payload fournisseur en est exclu. |
+| `transfer_id` | Hash versionné de `canonical_observation_id + transfer_index`. |
 | `ingestion_run_id`, `lifecycle_run_id` | UUID/ULID de run, non réutilisé et manifesté. |
 | `dataset_id`, `model_id`, `manifest_id` | ULID/UUID avec manifeste ou registre ; contenu hashé séparément. |
 | `prediction_id` | Hash/ULID incluant modèle, entité, cutoff, timestamp et politique. |
@@ -160,13 +166,13 @@ Une collision détectée est une anomalie bloquante : comparer les composants de
 | `prediction_timestamp` | Instant de production du score. |
 | `label_observation_end` | Fin de fenêtre effectivement observée pour un label. |
 
-Ordre canonique : `blockchain_timestamp`, `block`, `transaction_index`, `instruction_index`, `event_index`, `signature`, `event_id`. Les nulls se trient après les valeurs connues à chaque niveau ; si `blockchain_timestamp` manque, l'ordre n'est pas une preuve d'ordre chaîne et le statut qualité doit l'indiquer.
+Ordre canonique : `blockchain_timestamp`, `slot`, `block_height`, `provider_block`, `source_position`, `transaction_index`, `instruction_index`, `event_index`, `signature`, `canonical_observation_id`. Les nulls se trient après les valeurs connues à chaque niveau. `provider_block` et `source_position` ne prouvent pas une correspondance Solana ; si les positions chaîne manquent, l'ordre n'est pas une preuve d'ordre chaîne et le statut qualité doit l'indiquer.
 
 | Famille | Politique |
 | --- | --- |
-| SOL/lamports | Lamports en entier minimal pour exactitude transactionnelle ; SOL en decimal dérivé/documenté. |
-| Tokens | Entier en unité minimale si decimals connus ; sinon decimal avec échelle et qualité. |
-| Prix, market cap, réserves, frais | Decimal à échelle explicite ; jamais float comme valeur de stockage canonique. |
+| SOL/lamports | Lamports en entier minimal pour exactitude transactionnelle lorsque disponibles ; SOL en decimal dérivé, avec échelle et provenance. |
+| Tokens | Entier en unité minimale et `token_decimals` lorsque disponibles ; sinon decimal avec unité, échelle, précision et qualité. |
+| Prix, market cap, réserves, frais | Decimal à échelle explicite, unité et provenance ; jamais float comme valeur de stockage canonique. |
 | Pourcentages | Decimal fractionnaire documenté (`0.01` = 1 %). |
 | Timestamps/durées | UTC microseconde ; durées entières en millisecondes (`*_ms`). |
 
@@ -174,14 +180,17 @@ Ordre canonique : `blockchain_timestamp`, `block`, `transaction_index`, `instruc
 
 ## Sémantique des nulls et censure
 
-Un `NULL` signifie qu'aucune valeur ne peut être affirmée. La raison est portée par une colonne de statut/enums séparée lorsque importante : `ABSENT`, `UNKNOWN`, `NOT_APPLICABLE`, `NOT_OBSERVED`, `CENSORED_LEFT`, `CENSORED_RIGHT`, `INVALID`. Les entités et labels conservent ces états dans `quality_status`, `censoring_status` ou une colonne de raison ; aucune valeur sentinelle `-1`, `0` ou vide n'est autorisée. `is_null` dans FeatureValue sert au stockage, pas à effacer la raison dans le manifeste/politique.
+Les statuts partagés avec RFC-006 et RFC-007 sont : `coverage_status` = `COMPLETE`, `PARTIAL`, `MISSING`; `contract_status` = `SATISFIED`, `NOT_SATISFIED`, `NOT_EVALUABLE`; `usability_status` = `VALID`, `LIMITED`, `INVALID`; `censoring_status` = `NONE`, `LEFT`, `RIGHT`, `BOTH`. L'état économique ou d'activité reste dans `activity_state` et ne doit pas être surchargé par ces statuts.
+
+Un `NULL` signifie qu'aucune valeur ne peut être affirmée. La raison est portée par une colonne de statut/enums séparée lorsque importante : `ABSENT`, `UNKNOWN`, `NOT_APPLICABLE`, `NOT_OBSERVED`, `CENSORED_LEFT`, `CENSORED_RIGHT`, `INVALID`. Les entités et labels conservent ces états dans `coverage_status`, `contract_status`, `usability_status`, `censoring_status` ou une colonne de raison ; aucune valeur sentinelle `-1`, `0` ou vide n'est autorisée. `is_null` dans FeatureValue sert au stockage, pas à effacer la raison dans le manifeste/politique.
 
 ## Tables Parquet conceptuelles
 
 | Table | Clé logique | Partition suggérée | Volume / écriture / fréquence |
 | --- | --- | --- | --- |
 | `source_events` | `source_event_id` | source, date réception | Très élevé ; append-only ; continu/replay. |
-| `canonical_events` | `event_id` | protocole, date chaîne/réception | Très élevé ; append + dédup ; continu/micro-batch. |
+| `canonical_observations` | `canonical_observation_id` | protocole, date chaîne/réception | Très élevé ; append ; continu/micro-batch. |
+| `logical_events` | `logical_event_id` | protocole, date chaîne/réception | Élevé ; rapprochement versionné, jamais fusion silencieuse. |
 | `transfers` | `transfer_id` | date, mint préfixe | Élevé ; dérivé event ; incrémental. |
 | `tokens`, `wallets`, `pools` | mint/address/pool_id | snapshot ou préfixe | Moyen ; snapshots versionnés ; périodique. |
 | `token_lifecycles`, `token_outcomes` | clés versionnées | version, date observation | Moyen ; publication par run. |
@@ -198,7 +207,7 @@ Les schémas suivent `MAJOR.MINOR.PATCH`. PATCH clarifie documentation/contraint
 
 ## Décisions provisoires
 
-1. CanonicalEvent reste le contrat central et Transfer une table enfant spécialisée.
+1. `CanonicalObservation` est le contrat central de normalisation ; `LogicalEvent` est un rapprochement cross-source optionnel et Transfer une table enfant spécialisée.
 2. Les extensions fournisseur restent raw ou annexes versionnées.
 3. Montants canoniques exacts en unités minimales/decimal, pas float64 persistant.
 4. `NULL` plus statut explicite représente absence, inconnu, non-applicable, censure ou invalidité.
@@ -223,3 +232,4 @@ En attente de revue. Cette RFC reste `DRAFT` et n'autorise aucune implémentatio
 | Date | Version | Modification | Auteur |
 | --- | --- | --- | --- |
 | 2026-07-16 | 0.1 | Création du brouillon | Équipe AtlasPump |
+| 2026-07-17 | 0.2 | Séparation slot/hauteur/valeur fournisseur, identités source-observation-logique et unités atomiques explicites. | Équipe AtlasPump |
