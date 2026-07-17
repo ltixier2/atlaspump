@@ -1,28 +1,35 @@
-# Environnements et secrets
-.venv/
+# Secrets et configuration locale
 .env
 .env.*
 !.env.example
+
+# Environnements et caches Python
+.venv/
+venv/
+env/
 __pycache__/
 *.py[cod]
-
-# Outils Python
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
 htmlcov/
 
-# Données AtlasPump
+# Données et bases locales AtlasPump
 data/
+datasets/
+!docs/data/
+!docs/data/*.md
 *.parquet
 *.jsonl
 *.jsonl.zst
 *.zst
 *.duckdb
 *.db
+*.sqlite
+*.sqlite3
 
-# Modèles et artefacts
+# Modèles et artefacts d'entraînement
 models/
 checkpoints/
 *.keras
@@ -32,7 +39,13 @@ checkpoints/
 *.pth
 *.joblib
 
-# Système et IDE
+# Fichiers temporaires et système
+tmp/
+temp/
+*.tmp
+*.swp
 .DS_Store
-.vscode/
-.idea/
+Thumbs.db
+Desktop.ini
+
+# Les manifestes d'exemple et petits fixtures de tests restent versionnables.
