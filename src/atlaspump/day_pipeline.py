@@ -7,12 +7,13 @@ import json
 import os
 import platform
 import shutil
+import subprocess
 import tempfile
 import time
 import uuid
 from collections import Counter
 from collections.abc import Iterable
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -76,7 +77,17 @@ def _env() -> str:
 
 
 def _git_commit() -> str:
-    return os.environ.get("GIT_COMMIT", "unknown")
+    configured = os.environ.get("GIT_COMMIT")
+    if configured:
+        return configured
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=Path(__file__).resolve().parents[2],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip() if result.returncode == 0 else "unknown"
 
 
 def _atomic_copy(source: Path, destination: Path) -> None:
@@ -143,10 +154,20 @@ def collect_day(root: Path, input_root: Path, day: date, hours: Iterable[int], r
         partitions.append(item)
         write_manifest_atomic(checkpoint, {"capture_run_id": run_id, "last_checkpoint": partition, "partitions": partitions})
     coverage = "COMPLETE" if not missing and len(partitions) == len(hours) else ("PARTIAL" if partitions else "MISSING")
+    first_hour, last_hour = min(hours), max(hours)
+    requested_start = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc) + timedelta(
+        hours=first_hour
+    )
+    requested_end = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc) + timedelta(
+        hours=last_hour + 1
+    )
     manifest = {
         "manifest_id": f"collection-{day.isoformat()}-{run_id}", "manifest_type": COLLECTION,
         "publication_status": "LOCAL_COMPLETE", "capture_run_id": run_id, "provider": "pumpapi", "mode": "REPLAY",
-        "requested_window": {"start": f"{day.isoformat()}T00:00:00Z", "end": f"{day.fromordinal(day.toordinal()+1).isoformat()}T00:00:00Z"},
+        "requested_window": {
+            "start": requested_start.isoformat().replace("+00:00", "Z"),
+            "end": requested_end.isoformat().replace("+00:00", "Z"),
+        },
         "covered_window": {"partitions": [item["partition"] for item in partitions]}, "source_partitions": partitions,
         "missing_partitions": missing, "adapter_version": __version__, "id_strategy_version": ID_STRATEGY_VERSION,
         "input_request_hash": hashlib.sha256(f"pumpapi:{day}:{hours}".encode()).hexdigest(), "checkpoints": _relative(root, checkpoint),

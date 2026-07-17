@@ -14,6 +14,11 @@ from atlaspump.downloader import build_archive_url, download_archive
 
 
 def parse_hours(value: str) -> list[int]:
+    if "-" not in value:
+        hour = int(value)
+        if not 0 <= hour <= 23:
+            raise ValueError("hour must be within 0-23")
+        return [hour]
     start, end = (int(part) for part in value.split("-", maxsplit=1))
     if not 0 <= start <= end <= 23:
         raise ValueError("hours must be an inclusive range within 0-23")
