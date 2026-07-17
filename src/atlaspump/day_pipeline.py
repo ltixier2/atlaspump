@@ -7,6 +7,7 @@ import json
 import os
 import platform
 import shutil
+import sqlite3
 import subprocess
 import tempfile
 import time
@@ -267,33 +268,45 @@ def normalize_day(root: Path, day: date, collection_manifest: Path, config: dict
         raise FileExistsError(f"Refusing to overwrite normalized publication for {day}")
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_suffix(".parquet.partial")
-    counters: Counter[str] = Counter(); observations: set[str] = set(); source_ids: set[str] = set(); logical: set[str] = set()
+    counters: Counter[str] = Counter()
     batches: list[dict[str, Any]] = []
-    with pq.ParquetWriter(temporary, OBSERVATION_SCHEMA, compression="zstd") as writer, rejects.open("w", encoding="utf-8") as rejected:
-        for item in collection["source_partitions"]:
-            archive = root / item["path"]
-            if sha256_file(archive) != item["sha256"]:
-                raise ValueError(f"Raw hash mismatch: {archive}")
-            for line in iter_jsonl_zst(archive):
-                counters["source_events"] += 1
-                if line.payload is None:
-                    counters["invalid"] += 1; rejected.write(json.dumps({"partition": item["partition"], "line": line.line_number, "error": line.error, "raw": line.raw}) + "\n"); continue
-                row = _row(line.payload, line.raw, item["partition"], line.line_number, config)
-                if row["source_event_id"] in source_ids:
-                    counters["capture_duplicates"] += 1
-                source_ids.add(row["source_event_id"])
-                if row["canonical_observation_id"] in observations:
-                    counters["collisions"] += 1; continue
-                observations.add(row["canonical_observation_id"])
-                if row["logical_event_id"] is None: counters["logical_unresolved"] += 1
-                else: logical.add(row["logical_event_id"])
-                if row["event_type"] == "UNKNOWN": counters["unknown"] += 1
-                batches.append(row); counters["canonical_observations"] += 1
-                if len(batches) >= 10_000:
-                    writer.write_table(pa.Table.from_pylist(batches, schema=OBSERVATION_SCHEMA)); batches.clear()
-        if batches: writer.write_table(pa.Table.from_pylist(batches, schema=OBSERVATION_SCHEMA))
+    with tempfile.TemporaryDirectory(prefix="atlaspump-normalize-", dir=root / "tmp") as work:
+        tracker = sqlite3.connect(Path(work) / "identities.sqlite")
+        for table in ("source_ids", "observation_ids", "logical_ids"):
+            tracker.execute(f"CREATE TABLE {table} (value TEXT PRIMARY KEY)")
+        with pq.ParquetWriter(temporary, OBSERVATION_SCHEMA, compression="zstd") as writer, rejects.open("w", encoding="utf-8") as rejected:
+            for item in collection["source_partitions"]:
+                archive = root / item["path"]
+                if sha256_file(archive) != item["sha256"]:
+                    raise ValueError(f"Raw hash mismatch: {archive}")
+                for line in iter_jsonl_zst(archive):
+                    counters["source_events"] += 1
+                    if line.payload is None:
+                        counters["invalid"] += 1
+                        rejected.write(json.dumps({"partition": item["partition"], "line": line.line_number, "error": line.error, "raw": line.raw}) + "\n")
+                        continue
+                    row = _row(line.payload, line.raw, item["partition"], line.line_number, config)
+                    if tracker.execute("INSERT OR IGNORE INTO source_ids VALUES (?)", (row["source_event_id"],)).rowcount == 0:
+                        counters["capture_duplicates"] += 1
+                    if tracker.execute("INSERT OR IGNORE INTO observation_ids VALUES (?)", (row["canonical_observation_id"],)).rowcount == 0:
+                        counters["collisions"] += 1
+                        continue
+                    if row["logical_event_id"] is None:
+                        counters["logical_unresolved"] += 1
+                    else:
+                        tracker.execute("INSERT OR IGNORE INTO logical_ids VALUES (?)", (row["logical_event_id"],))
+                    if row["event_type"] == "UNKNOWN":
+                        counters["unknown"] += 1
+                    batches.append(row)
+                    counters["canonical_observations"] += 1
+                    if len(batches) >= 10_000:
+                        writer.write_table(pa.Table.from_pylist(batches, schema=OBSERVATION_SCHEMA))
+                        batches.clear()
+            if batches:
+                writer.write_table(pa.Table.from_pylist(batches, schema=OBSERVATION_SCHEMA))
+        counters["logical_resolved"] = int(tracker.execute("SELECT COUNT(*) FROM logical_ids").fetchone()[0])
+        tracker.close()
     temporary.replace(output)
-    counters["logical_resolved"] = len(logical)
     if rejects.stat().st_size == 0: rejects.unlink()
     files = [{"path": _relative(root, output), "sha256": sha256_file(output), "bytes": output.stat().st_size, "rows": counters["canonical_observations"]}]
     reject_files = [] if not rejects.exists() else [{"path": _relative(root, rejects), "sha256": sha256_file(rejects), "bytes": rejects.stat().st_size, "rows": counters["invalid"]}]
