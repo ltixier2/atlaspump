@@ -143,14 +143,21 @@ def collect_day(
         partition = f"{hour:02d}"
         source = _archive(input_root, day, hour)
         retries = 0
-        source_url = None
+        source_url = (
+            build_archive_url(archive_url_template, day, hour)
+            if archive_url_template is not None
+            else None
+        )
+        download_seconds = 0.0
         if not source.is_file() and download_missing:
             if archive_url_template is None:
                 raise ValueError("archive_url_template is required when downloading")
-            source_url = build_archive_url(archive_url_template, day, hour)
+            if source_url is None:
+                raise AssertionError("source URL was not built")
             for attempt in range(1, max_retries + 1):
                 try:
-                    download_archive(source_url, source, timeout_seconds)
+                    result = download_archive(source_url, source, timeout_seconds)
+                    download_seconds = result.elapsed_seconds
                     break
                 except DownloadError:
                     retries = attempt
@@ -166,7 +173,14 @@ def collect_day(
                 raise FileExistsError(f"Raw archive exists with a different hash: {target}")
         else:
             _atomic_copy(source, target)
-        received = invalid = duplicates = 0
+        received = invalid = duplicates = before_window = after_window = 0
+        source_timestamp_min: int | None = None
+        source_timestamp_max: int | None = None
+        window_start = int(
+            (datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=hour)).timestamp()
+            * 1000
+        )
+        window_end = window_start + 3_600_000
         seen: set[str] = set()
         for line in iter_jsonl_zst(target):
             if line.payload is None:
@@ -176,8 +190,14 @@ def collect_day(
             duplicates += source_id in seen
             seen.add(source_id)
             received += 1
+            timestamp = line.payload.get("timestamp")
+            if isinstance(timestamp, int):
+                source_timestamp_min = timestamp if source_timestamp_min is None else min(source_timestamp_min, timestamp)
+                source_timestamp_max = timestamp if source_timestamp_max is None else max(source_timestamp_max, timestamp)
+                before_window += timestamp < window_start
+                after_window += timestamp >= window_end
         counts.update(received=received, invalid=invalid, duplicates=duplicates, bytes=target.stat().st_size)
-        item = {"partition": partition, "path": _relative(root, target), "sha256": sha256_file(target), "bytes": target.stat().st_size, "received": received, "invalid": invalid, "duplicates": duplicates, "source_url": source_url, "retries": retries}
+        item = {"partition": partition, "path": _relative(root, target), "sha256": sha256_file(target), "bytes": target.stat().st_size, "received": received, "invalid": invalid, "duplicates": duplicates, "source_url": source_url, "retries": retries, "download_seconds": download_seconds, "download_bytes_per_second": target.stat().st_size / download_seconds if download_seconds else None, "source_timestamp_min": source_timestamp_min, "source_timestamp_max": source_timestamp_max, "before_window": before_window, "after_window": after_window}
         partitions.append(item)
         write_manifest_atomic(checkpoint, {"capture_run_id": run_id, "last_checkpoint": partition, "partitions": partitions})
     coverage = "COMPLETE" if not missing and len(partitions) == len(hours) else ("PARTIAL" if partitions else "MISSING")
