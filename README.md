@@ -43,3 +43,17 @@ Les données volumineuses, modèles, checkpoints et bases locales ne doivent
 jamais être stockés dans Git. Les chemins physiques sont configurables avec
 `ATLAS_DATA_DIR` ; Cerebro est le stockage opérationnel, Neon le catalogue et
 Cloudflare R2 la sauvegarde distante restaurable ; voir [.env.example](.env.example).
+
+## Pipeline journalier local
+
+Le replay journalier est séparé en deux publications : collecte raw puis normalisation. Les commandes ne téléchargent rien lorsque `--input-root` contient des archives locales au chemin `YYYY/MM/DD/HH.jsonl.zst`.
+
+```bash
+python -m atlaspump.cli collect-day --date 2026-04-19 --hours 0-23 \
+  --input-root /chemin/vers/archives --output-root /mnt/atlaspump --resume
+python -m atlaspump.cli normalize-day --date 2026-04-19 \
+  --raw-manifest /mnt/atlaspump/manifests/collection/date=2026-04-19/collection_manifest.json \
+  --output-root /mnt/atlaspump
+```
+
+Les manifestes utilisent des chemins relatifs à `--output-root`. La normalisation écrit `canonical_observations.parquet`, avec `source_event_id`, `canonical_observation_id`, `logical_event_id`, `slot`, `block_height` et `provider_block`. Les commandes historiques fondées sur `event_id` et `block` restent legacy ; elles ne constituent pas une publication RFC-003.

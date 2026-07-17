@@ -1,0 +1,39 @@
+source:
+  archive_url_template: "https://replay.pumpapi.io/{year}/{month}/{day}/{hour}.jsonl.zst"
+  timeout_seconds: 60
+processing:
+  batch_size: 10000
+  example_limit: 3
+classification:
+  field_candidates: [txType]
+  rules:
+    BUY: [buy]
+    SELL: [sell]
+    TRANSFER: [transfer]
+    CREATE_TOKEN: [create]
+    CREATE_POOL: [createPool]
+    MIGRATE: [migrate]
+    ADD_LIQUIDITY: [add]
+    REMOVE_LIQUIDITY: [remove]
+normalization:
+  fields:
+    signature: [signature]
+    block: [block]
+    blockchain_timestamp: [timestamp]
+    archive_timestamp: [localTimestamp]
+    token_mint: [mint]
+    wallet: [txSigner]
+    pool: [pool]
+    pool_created_by: [poolCreatedBy]
+    sol_amount: [solAmount]
+    token_amount: [tokenAmount]
+    price: [price]
+    market_cap_sol: [marketCapSol]
+    pool_id: [poolId]
+    sol_in_pool: [solInPool]
+    tokens_in_pool: [tokensInPool]
+    v_sol_in_bonding_curve: [vSolInBondingCurve]
+    v_tokens_in_bonding_curve: [vTokensInBondingCurve]
+    priority_fee: [priorityFee]
+    token_program: [tokenProgram]
+  protocol_fields: [source, protocol, platform, dex]
