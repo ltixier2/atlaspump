@@ -33,7 +33,7 @@ def plan_retention(root: Path, days: list[date], dry_run: bool = True) -> Path:
         raise ValueError("Retention Policy v1 is planning-only; --dry-run is mandatory")
     con = duckdb.connect()
     records: list[dict[str, Any]] = []
-    summary: dict[str, Any] = {"tokens": {}, "events": {}, "bytes": {"hold": 0, "candidate": 0}}
+    summary: dict[str, Any] = {"tokens": {}, "events": {}, "selected_mints": {}, "bytes": {"hold": 0, "candidate": 0}}
     today = datetime.now(timezone.utc).date()
     for day in days:
         iso = day.isoformat()
@@ -48,6 +48,7 @@ def plan_retention(root: Path, days: list[date], dry_run: bool = True) -> Path:
         kept_events = sum(count for mint, _, count in rows if mint in kept)
         summary["tokens"][iso] = {"all": len(rows), "migrated": len(migrated), "sampled_ordinary": len(sampled), "kept": len(kept)}
         summary["events"][iso] = {"all": sum(count for _, _, count in rows), "kept": kept_events}
+        summary["selected_mints"][iso] = sorted(kept)
         for path, category, reason in (
             (lifecycle / "token_lifecycles.parquet", "lifecycle", "required_full_retention"),
             (lifecycle / "token_outcomes_preliminary.parquet", "outcome", "required_full_retention"),

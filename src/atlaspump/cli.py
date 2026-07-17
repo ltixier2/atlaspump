@@ -212,6 +212,10 @@ def main() -> None:
     retention.add_argument("--date", required=True, action="append", type=date.fromisoformat)
     retention.add_argument("--output-root", required=True, type=Path)
     retention.add_argument("--dry-run", action="store_true", default=True)
+    quarantine = sub.add_parser("compact-retention-quarantine", help="Publish selected token-event subsets")
+    quarantine.add_argument("--date", required=True, action="append")
+    quarantine.add_argument("--output-root", required=True, type=Path)
+    quarantine.add_argument("--retention-manifest", required=True, type=Path)
     args = parser.parse_args()
     from atlaspump.logging_config import configure_logging
 
@@ -260,6 +264,11 @@ def main() -> None:
         from atlaspump.retention_policy import plan_retention
 
         print(plan_retention(args.output_root, args.date, args.dry_run))
+        return
+    if args.command == "compact-retention-quarantine":
+        from atlaspump.retention_quarantine import compact_quarantine
+
+        print(compact_quarantine(args.output_root, args.retention_manifest, args.date))
         return
     if args.command == "backfill":
         from atlaspump.backfill import backfill_day, parse_hours
