@@ -216,6 +216,12 @@ def main() -> None:
     quarantine.add_argument("--date", required=True, action="append")
     quarantine.add_argument("--output-root", required=True, type=Path)
     quarantine.add_argument("--retention-manifest", required=True, type=Path)
+    approval = sub.add_parser("approve-delete-candidate")
+    approval.add_argument("--output-root", required=True, type=Path); approval.add_argument("--validation-report", required=True, type=Path); approval.add_argument("--approver", required=True); approval.add_argument("--reason", required=True); approval.add_argument("--grace-days", type=int, default=7)
+    cancellation = sub.add_parser("cancel-delete-approval")
+    cancellation.add_argument("--output-root", required=True, type=Path); cancellation.add_argument("--run-id", required=True); cancellation.add_argument("--reason", required=True)
+    restore_cmd = sub.add_parser("restore-quarantine-drill")
+    restore_cmd.add_argument("--output-root", required=True, type=Path); restore_cmd.add_argument("--quarantine-manifest", required=True, type=Path)
     args = parser.parse_args()
     from atlaspump.logging_config import configure_logging
 
@@ -270,6 +276,15 @@ def main() -> None:
 
         print(compact_quarantine(args.output_root, args.retention_manifest, args.date))
         return
+    if args.command == "approve-delete-candidate":
+        from atlaspump.delete_approval import approve
+        print(approve(args.output_root,args.validation_report,args.approver,args.reason,args.grace_days)); return
+    if args.command == "cancel-delete-approval":
+        from atlaspump.delete_approval import cancel
+        print(cancel(args.output_root,args.run_id,args.reason)); return
+    if args.command == "restore-quarantine-drill":
+        from atlaspump.restore_drill import restore
+        print(restore(args.output_root,args.quarantine_manifest)); return
     if args.command == "backfill":
         from atlaspump.backfill import backfill_day, parse_hours
 

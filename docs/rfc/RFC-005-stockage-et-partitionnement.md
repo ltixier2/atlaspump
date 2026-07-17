@@ -223,6 +223,10 @@ La première application est strictement planificatrice : `--dry-run` est actif 
 
 Les états sont `DISCOVERED`, `HOLD`, `DELETE_CANDIDATE`, `DELETE_APPROVED`, `DELETED` et `FAILED`. Une transition directe de `DISCOVERED` à `DELETED` est interdite. Chaque manifest de rétention contient chemin relatif, taille, date logique, catégorie, justification, état et checksum pré-action. Une future action destructive exigera `DELETE_APPROVED`, dépendances vérifiées, journal et contrôle de restauration.
 
+### Delete Approval Workflow v1
+
+L'approbation est un journal append-only distinct de la planification et de la quarantaine. Elle exige un approbateur explicite, motif, hash du rapport validé, run de quarantaine, checksums courants et chemins exacts. Le parcours est `HOLD → DELETE_CANDIDATE → DELETE_APPROVED → GRACE_PERIOD → READY_TO_DELETE`; les transitions raccourcies et toute suppression restent interdites. Après sept jours par défaut, une vérification complète des sources, quarantaines, manifests et rapports est obligatoire. Delete Executor v1 n'est pas implémenté.
+
 ### Transfert des packs
 
 Un pack est un répertoire logique versionné contenant données, schéma, splits,
