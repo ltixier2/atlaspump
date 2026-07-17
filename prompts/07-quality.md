@@ -1,23 +1,27 @@
-# Qualité, censure et complétude
+# Qualité, censure et complétude — RFC-007
 
 ## Objectif
 
-Définir les contrôles dans RFC-007.
+Définir les contrôles de qualité, la couverture, la censure, la complétude,
+les sévérités, les rapports et la propagation vers les couches aval dans
+RFC-007.
 
 ## Entrées nécessaires
 
-- Contrats de données et règles lifecycle.
+- RFC-003, RFC-004, RFC-006, contrats de données et règles lifecycle.
 
 ## Livrables attendus
 
-- Proposition de RFC-007.
+- RFC-007 au statut DRAFT et index mis à jour.
 
 ## Critères d'acceptation
 
-- Qualité, censure et complétude sont mesurables.
+- Qualité, censure, complétude, sévérités, couverture, propagation et rapports
+  sont mesurables et versionnés.
 
 ## Interdictions
 
 - Ne pas assimiler une donnée censurée à un échec.
 
-**À compléter avant exécution.**
+Ne jamais assimiler une donnée censurée, absente ou partielle à un échec sans
+politique explicite. Ne pas supprimer ni corriger silencieusement le raw.

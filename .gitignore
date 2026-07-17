@@ -18,6 +18,8 @@ htmlcov/
 # Données et bases locales AtlasPump
 data/
 datasets/
+!docs/data/
+!docs/data/*.md
 *.parquet
 *.jsonl
 *.jsonl.zst

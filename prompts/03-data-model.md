@@ -1,23 +1,24 @@
-# Modèle de données canonique
+# Modèle canonique des données — RFC-003
 
 ## Objectif
 
-Définir le modèle canonique dans RFC-003.
+Définir entités, événements, identifiants, temps, unités, nulls, provenance, couches et évolution de schéma sans implémenter de pipeline.
 
 ## Entrées nécessaires
 
-- Sources d'événements et exigences de traçabilité.
+- RFC-001, RFC-002, exemples fournisseurs et exigences de traçabilité.
 
 ## Livrables attendus
 
-- Proposition de RFC-003.
+- RFC-003 au statut `DRAFT`, synthèse data et glossaire mis à jour.
 
 ## Critères d'acceptation
 
-- Schémas, identifiants et sémantique temporelle sont explicités.
+- Schémas, identifiants, sémantique temporelle, unités, nulls et migrations sont explicités.
 
 ## Interdictions
 
-- Ne pas créer de pipeline exécutable.
+- Ne pas créer de pipeline, collecteur, schéma physique ou code métier.
+- Ne pas transformer une inférence ou un score en fait observé.
 
 **À compléter avant exécution.**
