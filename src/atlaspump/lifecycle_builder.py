@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import os
 import time
+import uuid
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -17,12 +18,17 @@ VERSION = "0.1.0"
 TOKEN_EVENT_COLUMNS = (
     "mint",
     "event_id",
+    "source_event_id",
+    "canonical_observation_id",
+    "logical_event_id",
     "event_type",
     "protocol_scope",
     "pool",
     "pool_id",
     "signature",
-    "block",
+    "slot",
+    "block_height",
+    "provider_block",
     "blockchain_timestamp",
     "archive_timestamp",
     "wallet",
@@ -40,11 +46,12 @@ TOKEN_EVENT_COLUMNS = (
     "sequence_index",
     "time_since_first_event_ms",
     "time_since_previous_event_ms",
-    "raw_payload_json",
+    "raw_reference",
 )
 EVENT_SCHEMA = pa.schema([(name, pa.string()) for name in TOKEN_EVENT_COLUMNS])
 for _name in (
-    "block",
+    "slot",
+    "block_height",
     "blockchain_timestamp",
     "archive_timestamp",
     "sequence_index",
@@ -103,6 +110,11 @@ _LIFECYCLE_STRINGS = (
     "first_pool",
     "final_pool",
     "lifecycle_status",
+    "coverage_status",
+    "contract_status",
+    "usability_status",
+    "censoring_status",
+    "lifecycle_version",
 )
 LIFECYCLE_SCHEMA = pa.schema(
     [(name, pa.bool_()) for name in _LIFECYCLE_BOOLEANS]
@@ -221,11 +233,11 @@ def _finite_values(rows: list[dict[str, Any]], field: str) -> list[float]:
 def build_token_lifecycle(
     rows: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
-    """Build one lifecycle from rows already sorted by timestamp, block, signature and event id."""
+    """Build one lifecycle from rows sorted by canonical source positions."""
     rows.sort(
         key=lambda row: (
             row.get("blockchain_timestamp") or -1,
-            row.get("block") or -1,
+            row.get("slot") or -1,
             row.get("signature") or "",
             row.get("event_id") or "",
         )
@@ -297,7 +309,10 @@ def build_token_lifecycle(
     first_pool, final_pool = _first(rows, "pool"), _last(rows, "pool")
     explicit = types["MIGRATE"] > 0
     pumpswap = any(row.get("protocol_scope") == "PUMPSWAP" for row in rows)
-    pumpfun = any(row.get("protocol_scope") == "PUMPFUN_BONDING_CURVE" for row in rows)
+    pumpfun = any(
+        row.get("protocol_scope") in {"PUMPFUN_BONDING_CURVE", "PUMPFUN"}
+        for row in rows
+    )
     inferred = not explicit and pumpfun and pumpswap
     confidence = 1.0 if explicit else 0.6 if inferred else 0.0
     status = (
@@ -328,7 +343,7 @@ def build_token_lifecycle(
         "mint": mint,
         "creator": _first(rows, "creator"),
         "creation_signature": _first_of_type(rows, "CREATE_TOKEN", "signature"),
-        "creation_block": _first_of_type(rows, "CREATE_TOKEN", "block"),
+        "creation_block": _first_of_type(rows, "CREATE_TOKEN", "slot"),
         "creation_timestamp": _first_of_type(rows, "CREATE_TOKEN", "blockchain_timestamp"),
         "first_observed_timestamp": first_time,
         "last_observed_timestamp": last_time,
@@ -402,6 +417,13 @@ def build_token_lifecycle(
         "left_censored": not bool(types["CREATE_TOKEN"]),
         "right_censored": status in {"ACTIVE_ON_BONDING_CURVE", "ACTIVE_ON_PUMPSWAP"},
         "lifecycle_complete": explicit and not anomalies,
+        "coverage_status": "COMPLETE",
+        "contract_status": "SATISFIED",
+        "usability_status": "VALID",
+        "censoring_status": (
+            "RIGHT" if status in {"ACTIVE_ON_BONDING_CURVE", "ACTIVE_ON_PUMPSWAP"} else "NONE"
+        ),
+        "lifecycle_version": VERSION,
     }
     return lifecycle, events, anomalies
 
@@ -481,22 +503,59 @@ def build_lifecycles(
 ) -> dict[str, Any]:
     """Sort source events externally, then build one mint at a time."""
     started = time.monotonic()
+    final_names = (
+        "token_events.parquet",
+        "token_lifecycles.parquet",
+        "token_outcomes_preliminary.parquet",
+        "lifecycle_anomalies.parquet",
+    )
+    if any((output_dir / name).exists() for name in final_names):
+        raise FileExistsError(f"refusing to overwrite published lifecycle output: {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
     temp_dir = Path(os.environ.get("ATLAS_DATA_DIR", output_dir.parent)) / "tmp"
     temp_dir.mkdir(parents=True, exist_ok=True)
-    connection = duckdb.connect(str(temp_dir / "lifecycles.duckdb"))
-    fields = [
-        column
-        for column in TOKEN_EVENT_COLUMNS
-        if column
-        not in {
-            "mint",
-            "sequence_index",
-            "time_since_first_event_ms",
-            "time_since_previous_event_ms",
-        }
-    ]
-    select = ", ".join(["token_mint", *fields])
+    database_path = temp_dir / f"lifecycles-{uuid.uuid4().hex}.duckdb"
+    connection = duckdb.connect(str(database_path))
+    # External sorting is intentional: a full day must not reserve host memory.
+    connection.execute("SET memory_limit = '2GB'")
+    connection.execute("SET preserve_insertion_order = false")
+    connection.execute(f"SET temp_directory = '{temp_dir.as_posix()}'")
+    source_columns = {field.name for field in pq.ParquetFile(input_path).schema_arrow}
+    required = {"event_type", "protocol_scope", "blockchain_timestamp", "token_mint"}
+    missing = sorted(required - source_columns)
+    if missing:
+        raise ValueError(f"input missing lifecycle columns: {', '.join(missing)}")
+
+    def source(name: str, fallback: str = "NULL") -> str:
+        return name if name in source_columns else fallback
+
+    select = ", ".join(
+        (
+            "token_mint",
+            f"{source('canonical_observation_id', source('event_id_legacy'))} AS event_id",
+            f"{source('source_event_id')} AS source_event_id",
+            f"{source('canonical_observation_id')} AS canonical_observation_id",
+            f"{source('logical_event_id')} AS logical_event_id",
+            source("event_type"),
+            source("protocol_scope"),
+            "NULL AS pool, NULL AS pool_id",
+            source("signature"),
+            f"{source('slot')} AS slot",
+            f"{source('block_height')} AS block_height",
+            f"{source('provider_block')} AS provider_block",
+            source("blockchain_timestamp"),
+            source("archive_timestamp"),
+            source("wallet"),
+            "NULL AS creator, NULL AS pool_created_by",
+            source("sol_amount"),
+            source("token_amount"),
+            "NULL AS price, NULL AS market_cap_sol",
+            "NULL AS sol_in_pool, NULL AS tokens_in_pool",
+            "NULL AS v_sol_in_bonding_curve, NULL AS v_tokens_in_bonding_curve",
+            "NULL AS priority_fee",
+            source("raw_reference"),
+        )
+    )
     where = "token_mint IS NOT NULL"
     params: list[Any] = []
     if mint:
@@ -504,10 +563,10 @@ def build_lifecycles(
         params.append(mint)
     query = (
         f"SELECT {select} FROM read_parquet(?) WHERE {where} "
-        "ORDER BY token_mint, blockchain_timestamp, block, signature, event_id"
+        "ORDER BY token_mint, blockchain_timestamp, slot, signature, event_id"
     )
-    reader = connection.execute(query, [str(input_path), *params]).fetch_record_batch(
-        rows_per_batch=10_000
+    reader = connection.execute(query, [str(input_path), *params]).to_arrow_reader(
+        batch_size=10_000
     )
     writers: dict[str, pq.ParquetWriter] = {}
     paths = {
@@ -521,8 +580,9 @@ def build_lifecycles(
     current_mint: str | None = None
     lifecycle_count = 0
     anomaly_count = 0
+    pending: dict[str, list[dict[str, Any]]] = {label: [] for label in OUTPUT_SCHEMAS}
 
-    def write(label: str, rows: list[dict[str, Any]]) -> None:
+    def write_batch(label: str, rows: list[dict[str, Any]]) -> None:
         if not rows:
             return
         schema = OUTPUT_SCHEMAS[label]
@@ -547,6 +607,12 @@ def build_lifecycles(
             partial_paths[label].unlink(missing_ok=True)
             writers[label] = pq.ParquetWriter(partial_paths[label], schema, compression="zstd")
         writers[label].write_table(table)
+
+    def write(label: str, rows: list[dict[str, Any]]) -> None:
+        pending[label].extend(rows)
+        while len(pending[label]) >= 10_000:
+            write_batch(label, pending[label][:10_000])
+            del pending[label][:10_000]
 
     def flush() -> None:
         nonlocal lifecycle_count, anomaly_count, current
@@ -620,6 +686,8 @@ def build_lifecycles(
             current_mint = row["token_mint"]
             current.append(row)
     flush()
+    for label, rows in pending.items():
+        write_batch(label, rows)
     for label, schema in OUTPUT_SCHEMAS.items():
         if label not in writers:
             partial_paths[label].unlink(missing_ok=True)
@@ -631,6 +699,8 @@ def build_lifecycles(
     for label, final_path in paths.items():
         partial_paths[label].replace(final_path)
     connection.close()
+    for path in (database_path, database_path.with_suffix(".duckdb.wal")):
+        path.unlink(missing_ok=True)
     return {
         "token_count": lifecycle_count,
         "anomaly_count": anomaly_count,
