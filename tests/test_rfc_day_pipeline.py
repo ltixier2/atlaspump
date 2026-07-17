@@ -63,7 +63,7 @@ def test_collection_and_normalization_are_atomic_and_resumable(tmp_path: Path) -
     output = root / normalization["normalized_files"][0]["path"]
     assert output.read_bytes()[:4] == b"PAR1" and output.read_bytes()[-4:] == b"PAR1"
     table = pq.read_table(output)
-    assert {"source_event_id", "canonical_observation_id", "logical_event_id", "slot", "block_height", "provider_block", "raw_reference"} <= set(table.column_names)
+    assert {"source_event_id", "canonical_observation_id", "logical_event_id", "blockchain_timestamp", "archive_timestamp", "slot", "block_height", "provider_block", "raw_reference"} <= set(table.column_names)
     assert table.num_rows == 3
     with pytest.raises(FileExistsError):
         normalize_day(root, DAY, collection_path, load_settings().values)

@@ -51,6 +51,8 @@ OBSERVATION_SCHEMA = pa.schema(
         ("signature", pa.string()),
         ("instruction_index", pa.int64()),
         ("event_index", pa.int64()),
+        ("blockchain_timestamp", pa.int64()),
+        ("archive_timestamp", pa.int64()),
         ("slot", pa.int64()),
         ("block_height", pa.int64()),
         ("provider_block", pa.string()),
@@ -198,7 +200,7 @@ def _row(payload: dict[str, Any], raw: str, partition: str, line_number: int, co
     pool = None if payload.get("pool") is None else str(payload["pool"])
     scopes = {"pump": "PUMPFUN", "pump-amm": "PUMPSWAP"}
     scope = scopes.get(pool, "OTHER") if pool is not None else "OTHER"
-    return {"source_event_id": source_id, "canonical_observation_id": canonical_observation_id(source_id), "logical_event_id": logical_event_id(payload, event_type, mint), "event_type": event_type, "protocol_scope": scope, "signature": None if payload.get("signature") is None else str(payload["signature"]), "instruction_index": instruction, "event_index": event, "slot": slot, "block_height": height, "provider_block": provider_block, "source_partition": partition, "source_cursor": str(line_number), "raw_reference": f"{partition}:{line_number}", "token_mint": mint, "wallet": None if payload.get("txSigner") is None else str(payload["txSigner"]), "sol_amount": _decimal(payload.get("solAmount")), "token_amount": _decimal(payload.get("tokenAmount")), "schema_version": SCHEMA_VERSION, "normalization_version": NORMALIZATION_VERSION, "event_id_legacy": None}
+    return {"source_event_id": source_id, "canonical_observation_id": canonical_observation_id(source_id), "logical_event_id": logical_event_id(payload, event_type, mint), "event_type": event_type, "protocol_scope": scope, "signature": None if payload.get("signature") is None else str(payload["signature"]), "instruction_index": instruction, "event_index": event, "blockchain_timestamp": _integer(payload.get("timestamp")), "archive_timestamp": _integer(payload.get("localTimestamp")), "slot": slot, "block_height": height, "provider_block": provider_block, "source_partition": partition, "source_cursor": str(line_number), "raw_reference": f"{partition}:{line_number}", "token_mint": mint, "wallet": None if payload.get("txSigner") is None else str(payload["txSigner"]), "sol_amount": _decimal(payload.get("solAmount")), "token_amount": _decimal(payload.get("tokenAmount")), "schema_version": SCHEMA_VERSION, "normalization_version": NORMALIZATION_VERSION, "event_id_legacy": None}
 
 
 def normalize_day(root: Path, day: date, collection_manifest: Path, config: dict[str, Any], resume: bool = False) -> Path:
