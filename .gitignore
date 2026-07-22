@@ -30,8 +30,13 @@ datasets/
 *.sqlite
 *.sqlite3
 
+# Runtime local et état de backfill machine-local
+runtime/
+BACKFILL_STATUS.*
+
 # Modèles et artefacts d'entraînement
 models/
+catboost_info/
 checkpoints/
 *.keras
 *.h5
@@ -39,6 +44,10 @@ checkpoints/
 *.pt
 *.pth
 *.joblib
+
+# Builds Rust et sources externes vendorisées localement
+**/target/
+tools/vendor/
 
 # Fichiers temporaires et système
 tmp/
