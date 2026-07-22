@@ -243,6 +243,7 @@ class WindowBook:
         def encode(event: dict[str, Any]) -> dict[str, Any]:
             return {key: value.isoformat() if isinstance(value, datetime) else value for key, value in event.items()}
 
+        finalized_at = self.finalized_at
         return {
             "windows": {
                 mint: {
@@ -250,7 +251,7 @@ class WindowBook:
                     "feature_cutoff": (window.creation_time + timedelta(seconds=10)).isoformat(),
                     "state": "FINALIZED" if window.finalized else "OPEN",
                     "scheduled": mint in self.scheduled,
-                    "finalized_at": self.finalized_at.get(mint).isoformat() if mint in self.finalized_at else None,
+                    "finalized_at": finalized_at[mint].isoformat() if mint in finalized_at else None,
                     "prediction_written": mint in self.prediction_written,
                     "events": [encode(event) for event in window.events],
                     "finalized": window.finalized,

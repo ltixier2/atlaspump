@@ -50,7 +50,14 @@ def valuation(stake_eur: float, entry_price: float, exit_price: float, cost_rate
 def top_prediction_ids(rows: list[dict[str, object]], score_name: str, fraction: float) -> set[str]:
     if not 0 < fraction <= 1:
         raise ValueError("fraction must be in (0, 1]")
-    ranked = sorted(rows, key=lambda row: (-float(row[score_name]), str(row["prediction_id"])))
+
+    def score(row: dict[str, object]) -> float:
+        value = row.get(score_name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError(f"invalid score for {score_name}")
+        return float(value)
+
+    ranked = sorted(rows, key=lambda row: (-score(row), str(row["prediction_id"])))
     count = max(1, math.ceil(len(ranked) * fraction)) if ranked else 0
     return {str(row["prediction_id"]) for row in ranked[:count]}
 
