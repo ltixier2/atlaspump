@@ -21,21 +21,25 @@ versionnée.
   -> contrôle qualité
   -> Feature Lab
   -> Dataset Factory versionnée
-  -> modèles et évaluation
-  -> backtests réalistes
-  -> inférence, paper trading, puis trading éventuel
+  -> modèles et évaluation offline
+  -> simulations et audits reproductibles
 ```
 
 ## Statut
 
-Le projet est en **phase de conception**. Aucune fonctionnalité métier, aucun
-collecteur, aucun pipeline exécutable ni modèle ne sont encore implémentés.
+AtlasPump est **expérimental et data-first**. La branche contient un pipeline de
+replay et de normalisation, une reconstruction de lifecycle et des contrôles de
+qualité. La stack shadow RFC-014 existe pour l'audit et la validation
+expérimentale. Tout reste **OFFLINE / SHADOW / NON_PROMOTABLE** : aucun wallet,
+aucune signature, aucune transaction live et aucun modèle promu ne font partie
+du projet. Les expériences ML ne constituent pas un moteur live.
 
 ## RFC
 
 Les décisions structurantes sont définies et revues dans les
-[RFC](docs/rfc/README.md). Une fonctionnalité ne peut être implémentée qu'après
-l'acceptation de sa RFC structurante.
+[RFC](docs/rfc/README.md). Une RFC DRAFT peut être accompagnée d'une
+implémentation expérimentale clairement non promotionnable ; l'acceptation reste
+nécessaire avant toute stabilisation ou promotion.
 
 ## Données
 

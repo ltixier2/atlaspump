@@ -7,7 +7,7 @@ name = "atlaspump"
 version = "0.1.0"
 description = "Streaming audit tool for one PumpApi archive hour"
 requires-python = ">=3.10"
-dependencies = ["PyYAML>=6.0", "requests>=2.31", "zstandard>=0.22", "pyarrow>=16.0", "duckdb>=1.1"]
+dependencies = ["PyYAML>=6.0", "requests>=2.31", "zstandard>=0.22", "pyarrow>=16.0", "duckdb>=1.1", "numpy>=1.26", "psutil>=5.9"]
 
 [project.optional-dependencies]
 dev = ["mypy>=1.10", "pytest>=8.0", "ruff>=0.5"]
