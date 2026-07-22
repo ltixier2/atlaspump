@@ -1,0 +1,20 @@
+{
+  "dataset_name": "migration_within_60m_rfc_v1",
+  "dataset_version": "v2-streaming",
+  "dates": [
+    "2026-04-19",
+    "2026-04-20",
+    "2026-04-21",
+    "2026-04-22",
+    "2026-04-23",
+    "2026-04-24",
+    "2026-04-25",
+    "2026-04-26"
+  ],
+  "feature_horizons_seconds": [
+    10
+  ],
+  "label_available_mode": "JOINED_FROM_LABEL_PARTITION",
+  "label_horizon_seconds": 3600,
+  "label_name": "migration_within_60m_rfc_v1"
+}
