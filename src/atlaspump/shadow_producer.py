@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +34,7 @@ def record_hash(value: dict[str, Any]) -> str:
 def repair_active_file(root: Path) -> dict[str, Any]:
     """Repair only an incomplete final active record; archives are immutable."""
     active = root / "active" / "events.jsonl"
-    report = {"file_id": None, "original_size": 0, "recovered_size": 0, "bytes_truncated": 0, "last_valid_sequence": None, "recovery_reason": None, "recovery_time": datetime.now(UTC).isoformat()}
+    report = {"file_id": None, "original_size": 0, "recovered_size": 0, "bytes_truncated": 0, "last_valid_sequence": None, "recovery_reason": None, "recovery_time": datetime.now(timezone.utc).isoformat()}
     if not active.exists(): return report
     data = active.read_bytes(); report["original_size"] = len(data)
     valid_end = 0
@@ -94,7 +94,7 @@ def rebuild_sequence_index(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 def _iso_epoch(value: Any, fallback: datetime) -> str:
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value, UTC).isoformat().replace("+00:00", "Z")
+        return datetime.fromtimestamp(value, timezone.utc).isoformat().replace("+00:00", "Z")
     return fallback.isoformat().replace("+00:00", "Z")
 
 
@@ -109,7 +109,7 @@ def deterministic_event_id(event: dict[str, Any]) -> str:
 
 
 def to_stream_event(normalized: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
-    now = now or datetime.now(UTC)
+    now = now or datetime.now(timezone.utc)
     mapped = NORMALIZED_TYPES.get(str(normalized.get("event_type")), str(normalized.get("event_type")))
     if mapped not in EVENT_TYPES:
         raise ValueError(f"event type not exportable: {mapped}")
@@ -163,7 +163,7 @@ class JsonlProducer:
 
     def _write_active_pointer(self) -> None:
         path = self.root / "manifests" / "active.json"; path.parent.mkdir(parents=True, exist_ok=True)
-        value = {"stream_session_id": self.stream_session_id, "source_file_id": self.source_file_id, "path": str(self.active), "previous_source_file_id": self.previous_source_file_id, "first_sequence": self.file_first_sequence, "updated_at": datetime.now(UTC).isoformat()}
+        value = {"stream_session_id": self.stream_session_id, "source_file_id": self.source_file_id, "path": str(self.active), "previous_source_file_id": self.previous_source_file_id, "first_sequence": self.file_first_sequence, "updated_at": datetime.now(timezone.utc).isoformat()}
         temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
         with temporary.open("w", encoding="utf-8") as handle:
             handle.write(json.dumps(value, sort_keys=True) + "\n"); handle.flush(); os.fsync(handle.fileno())
@@ -179,8 +179,8 @@ class JsonlProducer:
             "source_file_id": self.source_file_id,
             "stream_session_id": self.stream_session_id,
             "path": str(self.active if not closed else self.root / "archive" / f"{self.source_file_id}.jsonl"),
-            "created_at": datetime.now(UTC).isoformat(),
-            "closed_at": datetime.now(UTC).isoformat() if closed else None,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "closed_at": datetime.now(timezone.utc).isoformat() if closed else None,
             "first_sequence": self.file_first_sequence,
             "last_sequence": self.stream_sequence if self.file_records else None,
             "size_bytes": self.active.stat().st_size if self.active.exists() else 0,
@@ -220,7 +220,7 @@ class JsonlProducer:
             "control_type": control_type,
             "stream_session_id": self.stream_session_id,
             "stream_sequence": self._next_sequence(),
-            "control_time": datetime.now(UTC).isoformat(),
+            "control_time": datetime.now(timezone.utc).isoformat(),
             "producer_host": "cerebro-one",
             "details": details or {},
         }
@@ -313,7 +313,7 @@ class JsonlProducer:
     def dead_letter(self, raw: Any, error: Exception) -> None:
         path = self.root / "dead_letter" / "events.jsonl"
         with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps({"raw": raw, "error": str(error), "at": datetime.now(UTC).isoformat()}) + "\n")
+            handle.write(json.dumps({"raw": raw, "error": str(error), "at": datetime.now(timezone.utc).isoformat()}) + "\n")
 
 
 class ShadowEventSink:

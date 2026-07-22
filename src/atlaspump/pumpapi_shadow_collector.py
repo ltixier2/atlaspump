@@ -10,7 +10,7 @@ import hashlib
 import json
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from atlaspump.shadow_producer import ShadowEventSink
@@ -56,7 +56,7 @@ def stream_event(payload: dict[str, Any], received_at: datetime) -> dict[str, An
         return None
     # PumpAPI inspection confirms epoch milliseconds (for example 1784531213034).
     seconds = timestamp / 1000 if isinstance(timestamp, (int, float)) and timestamp > 100_000_000_000 else timestamp
-    event_time = datetime.fromtimestamp(seconds, UTC) if isinstance(seconds, (int, float)) else received_at
+    event_time = datetime.fromtimestamp(seconds, timezone.utc) if isinstance(seconds, (int, float)) else received_at
     signature = payload.get("signature")
     index = payload.get("index", payload.get("instruction_index", 0))
     identity = str(payload.get("id") or (f"{signature}:{index}:{mint}" if signature else payload_hash(payload)))
@@ -105,7 +105,7 @@ class PumpApiShadowFilter:
         self.metrics = PumpApiMetrics()
 
     def accept(self, payload: dict[str, Any], received_at: datetime | None = None) -> None:
-        now = received_at or datetime.now(UTC)
+        now = received_at or datetime.now(timezone.utc)
         self.metrics.messages_received += 1
         self.metrics.messages_by_action[str(payload.get("action", payload.get("txType", "UNKNOWN"))).lower()] += 1
         self.metrics.messages_by_pool[str(payload.get("pool", "UNKNOWN")).lower()] += 1
