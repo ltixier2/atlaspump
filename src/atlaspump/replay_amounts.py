@@ -16,7 +16,8 @@ def canonical_decimal(value: Any) -> str | None:
     if value is None:
         return None
     try:
-        return str(Decimal(str(value)))
+        decimal = Decimal(str(value))
+        return str(decimal) if decimal.is_finite() else None
     except (InvalidOperation, ValueError):
         return None
 

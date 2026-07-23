@@ -17,6 +17,9 @@ def test_decimal_equivalent_rendering_is_not_a_unit_conversion() -> None:
 def test_invalid_or_missing_raw_value_is_not_verified() -> None:
     assert identity_serialization_status(None, "1") == "SOURCE_NOT_FOUND"
     assert canonical_decimal("not-a-number") is None
+    assert canonical_decimal("NaN") is None
+    assert canonical_decimal("Infinity") is None
+    assert canonical_decimal("-Infinity") is None
 
 
 def test_side_is_not_inferred_from_unknown_event() -> None:
