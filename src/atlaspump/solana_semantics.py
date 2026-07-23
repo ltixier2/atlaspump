@@ -23,9 +23,16 @@ def decode_spl_mint_decimals(encoded: str) -> int | None:
 
 def ui_amount(raw_amount: str | int, decimals: int) -> Decimal:
     """Scale an atomic token amount only when decimals came from an authority."""
-    if not 0 <= decimals <= 255:
+    if isinstance(decimals, bool) or not isinstance(decimals, int) or not 0 <= decimals <= 255:
         raise ValueError("invalid SPL token decimals")
-    return Decimal(str(raw_amount)) / (Decimal(10) ** decimals)
+    if isinstance(raw_amount, bool) or not isinstance(raw_amount, (int, str)):
+        raise ValueError("invalid atomic token amount")
+    if isinstance(raw_amount, str) and not raw_amount.isdecimal():
+        raise ValueError("invalid atomic token amount")
+    amount = int(raw_amount)
+    if amount < 0:
+        raise ValueError("invalid atomic token amount")
+    return Decimal(amount) / (Decimal(10) ** decimals)
 
 
 def token_balance_decimals(meta: dict[str, Any], mint: str) -> set[int]:
@@ -37,6 +44,6 @@ def token_balance_decimals(meta: dict[str, Any], mint: str) -> set[int]:
                 continue
             amount = balance.get("uiTokenAmount") or {}
             decimals = amount.get("decimals")
-            if isinstance(decimals, int):
+            if isinstance(decimals, int) and not isinstance(decimals, bool) and 0 <= decimals <= 255:
                 found.add(decimals)
     return found
