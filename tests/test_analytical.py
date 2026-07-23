@@ -1,3 +1,5 @@
+import pytest
+
 from atlaspump.analytical import assert_analytical_schema, metrics, select
 
 ROWS = [
@@ -21,7 +23,10 @@ def test_metrics():
 
 
 def test_financial_columns_rejected():
-    import pytest
-
     with pytest.raises(ValueError):
         assert_analytical_schema({"token_mint", "pnl"})
+
+
+def test_select_rejects_financial_input_field():
+    with pytest.raises(ValueError, match="financial fields forbidden"):
+        select([{"token_mint": "a", "score": 0.5, "label_value": 1, "pnl": 42}], "score", "TOP_K_DAILY", 1)

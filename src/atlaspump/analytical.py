@@ -12,6 +12,7 @@ FINANCIAL_FIELDS = {"price", "pnl", "capital", "fees", "slippage", "drawdown", "
 def select(
     rows: list[dict[str, Any]], score_field: str, mode: str, parameter: float
 ) -> list[dict[str, Any]]:
+    assert_analytical_schema({column for row in rows for column in row})
     ordered = sorted(rows, key=lambda row: (-float(row[score_field]), str(row["token_mint"])))
     if mode == "TOP_K_DAILY":
         chosen = ordered[: int(parameter)]
